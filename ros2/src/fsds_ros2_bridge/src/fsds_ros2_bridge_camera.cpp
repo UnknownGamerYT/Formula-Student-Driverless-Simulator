@@ -186,6 +186,7 @@ int main(int argc, char ** argv)
     framerate = nh->declare_parameter<double>("framerate", 0.0);
     host_ip = nh->declare_parameter<std::string>("host_ip", "localhost");
     depthcamera = nh->declare_parameter<bool>("depthcamera", false);
+    double timeout_sec = nh->declare_parameter<double>("timeout", 30.0);
 
     if(camera_name == "") {
         RCLCPP_FATAL(nh->get_logger(), "camera_name unset.");
@@ -200,10 +201,8 @@ int main(int argc, char ** argv)
     fps_statistic = ros_bridge::Statistics("fps");
 
     // ready airsim connection
-    msr::airlib::CarRpcLibClient client(host_ip, RpcLibPort, 5);
+    msr::airlib::CarRpcLibClient client(host_ip, RpcLibPort, timeout_sec);
     airsim_api = &client;
-
-    double timeout_sec = nh->declare_parameter<double>("timeout", 10.0);
 
     try {
         std::cout << "Waiting for connection - " << std::endl;

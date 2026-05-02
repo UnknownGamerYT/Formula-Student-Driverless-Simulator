@@ -52,13 +52,13 @@ HOST_IP=$(ip route | awk '/default/ {print $3; exit}')
 For keyboard control in the simulator while ROS is connected, start the bridge in manual mode:
 
 ```bash
-ros2 launch fsds_ros2_bridge fsds_ros2_bridge.launch.py host:=$HOST_IP manual_mode:=true
+ros2 launch fsds_ros2_bridge fsds_ros2_bridge.launch.py host:=$HOST_IP manual_mode:=true timeout:=60.0
 ```
 
 For API-only control from ROS, start the bridge without manual mode:
 
 ```bash
-ros2 launch fsds_ros2_bridge fsds_ros2_bridge.launch.py host:=$HOST_IP
+ros2 launch fsds_ros2_bridge fsds_ros2_bridge.launch.py host:=$HOST_IP timeout:=60.0
 ```
 
 Leave this terminal open.
@@ -93,7 +93,85 @@ Expected nodes:
 /fsds/ros_bridge
 ```
 
-## 4. Stop Everything
+## 4. Visualize In Foxglove
+
+Foxglove is enough for normal topic inspection, camera viewing, plots, and lidar/odom debugging. RViz is optional and mostly useful for deeper TF/frame debugging.
+
+With the simulator and ROS bridge already running, open another Ubuntu/WSL terminal:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/Formula-Student-Driverless-Simulator/ros2/install/setup.bash
+
+ros2 run foxglove_bridge foxglove_bridge
+```
+
+Expected output:
+
+```text
+Server listening on port 8765
+```
+
+In Foxglove, connect to:
+
+```text
+ws://localhost:8765
+```
+
+If `localhost` does not work from Windows, get the WSL IP:
+
+```bash
+hostname -I
+```
+
+Then connect Foxglove to:
+
+```text
+ws://<WSL_IP>:8765
+```
+
+List the exact available topics:
+
+```bash
+ros2 topic list | grep -E 'fsds|tf'
+```
+
+Useful topics to add in Foxglove:
+
+```text
+/fsds/gps
+/fsds/imu
+/fsds/gss
+/fsds/testing_only/odom
+/fsds/testing_only/track
+/fsds/lidar/Lidar1
+/fsds/lidar/Lidar2
+/tf_static
+```
+
+Camera topic names can differ by bridge version. Find them with:
+
+```bash
+ros2 topic list | grep camera
+```
+
+Common camera topics:
+
+```text
+/fsds/camera/cam1/image_color
+/fsds/camera/cam1/camera_info
+/fsds/camera/cam2/image_color
+/fsds/camera/cam2/camera_info
+```
+
+Suggested Foxglove panels:
+
+- 3D panel: odometry, lidar, and `/tf_static`
+- Image panel: camera image topic
+- Plot panel: `/fsds/gss` or `/fsds/imu`
+- Raw Messages panel: `/fsds/gps` and `/fsds/testing_only/extra_info`
+
+## 5. Stop Everything
 
 Stop the bridge:
 
@@ -149,3 +227,9 @@ Test-NetConnection -ComputerName 127.0.0.1 -Port 41451
 ```
 
 returns `TcpTestSucceeded: True`.
+
+If the simulator machine is slow and the bridge still starts too early, launch with a larger timeout:
+
+```bash
+ros2 launch fsds_ros2_bridge fsds_ros2_bridge.launch.py host:=$HOST_IP manual_mode:=true timeout:=120.0
+```

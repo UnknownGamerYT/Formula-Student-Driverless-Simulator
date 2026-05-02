@@ -26,6 +26,7 @@ def generate_launch_description():
                 {'depthcamera': camera_config["CaptureSettings"][0]["ImageType"] == 2},
                 {'framerate': CAMERA_FRAMERATE},
                 {'host_ip': launch.substitutions.LaunchConfiguration('host')},
+                {'timeout': launch.substitutions.LaunchConfiguration('timeout')},
             ]
         ) for camera_name, camera_config in camera_configs.items()]
 
@@ -54,6 +55,10 @@ def generate_launch_description():
         launch.actions.DeclareLaunchArgument(
             name='UDP_control',
             default_value='false'
+        ),
+        launch.actions.DeclareLaunchArgument(
+            name='timeout',
+            default_value='30.0'
         ),
         *camera_nodes,
         launch_ros.actions.Node(
@@ -99,6 +104,9 @@ def generate_launch_description():
                 },
                 {
                     'UDP_control': launch.substitutions.LaunchConfiguration('UDP_control')
+                },
+                {
+                    'timeout': launch.substitutions.LaunchConfiguration('timeout')
                 }
             ]
         )
