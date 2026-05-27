@@ -203,6 +203,19 @@ loginctl list-sessions
 
 Choose the correct path below.
 
+If you want a clean viewer start, stop any old noVNC and VNC backends before starting Path A or Path B:
+
+```bash
+pgrep -f '[w]ebsockify.*6080' | xargs -r kill
+pgrep -f '[x]11vnc.*5900' | xargs -r kill
+sleep 2
+pgrep -f '[w]ebsockify.*6080' | xargs -r kill -9
+pgrep -f '[x]11vnc.*5900' | xargs -r kill -9
+ss -ltnp | grep -E ':(5900|6080)' || true
+```
+
+No output for ports `5900` and `6080` means both viewer services are closed.
+
 ### Path A: The `hard` Desktop Is Already Active
 
 Use this if `X1` exists and `loginctl` shows a local `hard` session. This is the normal path after the GX10 user is already logged in.
@@ -217,6 +230,8 @@ x11vnc \
   -localhost \
   -forever \
   -shared \
+  -noxdamage \
+  -repeat \
   -rfbport 5900
 ```
 
