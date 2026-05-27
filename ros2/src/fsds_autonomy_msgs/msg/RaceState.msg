@@ -1,0 +1,12 @@
+std_msgs/Header header
+string mission
+string track_id
+string mode
+string behavior_state
+float32 target_speed
+float32 target_steering
+float32 map_quality
+bool map_loaded
+bool emergency_brake
+bool go_signal_fresh
+string status

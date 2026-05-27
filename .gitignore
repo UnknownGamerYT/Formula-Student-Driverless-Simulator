@@ -11,3 +11,18 @@ site
 # compiled python files
 *.pyc
 __pycache__/
+
+# local Unreal editor/build outputs and machine-specific engine links
+Engine
+UE5Builds/
+
+# downloaded detector weights and exports
+*.pt
+*.onnx
+*.engine
+
+# local autonomy artifacts
+ros2/src/fsds_autonomy/maps/
+ros2/src/fsds_autonomy/datasets/
+ros2/src/fsds_autonomy/models/
+ros2/src/fsds_autonomy/runs/

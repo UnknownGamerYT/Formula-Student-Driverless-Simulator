@@ -1,0 +1,8 @@
+std_msgs/Header header
+string track_id
+bool closed_loop
+float32 quality
+fsds_autonomy_msgs/DetectedCone[] cones
+geometry_msgs/Point[] centerline
+geometry_msgs/Point[] racing_line
+float32[] speed_profile

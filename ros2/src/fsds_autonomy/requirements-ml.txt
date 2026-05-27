@@ -1,0 +1,14 @@
+# Optional ML/training dependencies. Install these in the ROS2 Python environment or
+# a separate venv before running the tools/ scripts.
+# Keep NumPy below 2.x for ROS Jazzy/cv_bridge compatibility on this setup.
+numpy<2.0
+opencv-python<4.12
+torch
+ultralytics
+onnxruntime
+gymnasium
+stable-baselines3
+tensorboard
+depthai
+msgpack-rpc-python
+backports.ssl_match_hostname

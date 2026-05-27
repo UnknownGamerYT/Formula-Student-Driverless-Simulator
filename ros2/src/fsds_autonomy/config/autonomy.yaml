@@ -1,0 +1,177 @@
+fsds_mission_manager:
+  ros__parameters:
+    go_timeout_sec: 4.0
+    publish_rate_hz: 5.0
+
+fsds_state_estimator:
+  ros__parameters:
+    use_testing_odom: false
+    publish_rate_hz: 50.0
+
+fsds_lidar_cone_detector:
+  ros__parameters:
+    lidar1_topic: /fsds/lidar/Lidar1
+    lidar2_topic: /fsds/lidar/Lidar2
+    cluster_tolerance: 0.22
+    min_cluster_points: 3
+    max_range_m: 25.0
+    max_abs_y_m: 12.0
+    publish_rate_hz: 20.0
+
+fsds_camera_detector:
+  ros__parameters:
+    cam1_topic: /fsds/cam1/image_color
+    cam2_topic: /fsds/cam2/image_color
+    confidence: 0.55
+    use_color_fallback: true
+    color_fallback_confidence: 0.28
+    color_fallback_min_area_px: 120
+    color_fallback_max_detections: 20
+    color_fallback_roi_top_fraction: 0.34
+    color_fallback_roi_bottom_fraction: 0.84
+    color_fallback_own_vehicle_mask_top_fraction: 0.62
+    color_fallback_own_vehicle_mask_left_fraction: 0.12
+    color_fallback_own_vehicle_mask_right_fraction: 0.88
+    publish_debug_image: true
+    overlay_camera_name: cam1
+    camera_fov_deg: 90.0
+    track_half_width_m: 1.75
+    overlay_min_boundary_confidence: 0.30
+    overlay_path_min_quality: 0.35
+    overlay_max_range_m: 22.0
+    stereo_enabled: true
+    stereo_max_time_delta_sec: 0.30
+    stereo_min_confidence: 0.45
+    stereo_min_disparity_rad: 0.006
+    stereo_good_disparity_rad: 0.025
+    stereo_max_range_m: 25.0
+    stereo_max_abs_y_m: 10.0
+    stereo_max_match_cost: 1.25
+
+fsds_sensor_fusion:
+  ros__parameters:
+    bearing_gate_rad: 0.18
+    range_gate_m: 5.0
+    include_camera_only_geometry: false
+    include_stereo_camera_geometry: true
+    camera_only_min_confidence: 0.65
+    stereo_camera_min_confidence: 0.45
+    stereo_position_gate_m: 2.0
+    stereo_lidar_position_blend: 0.35
+    diagnostics_enabled: true
+    diagnostics_publish_rate_hz: 5.0
+    diagnostics_warn_distance_m: 0.75
+    diagnostics_error_distance_m: 1.50
+    diagnostics_max_rows: 12
+    publish_rate_hz: 30.0
+
+fsds_mapper:
+  ros__parameters:
+    association_radius_m: 0.75
+    save_period_sec: 5.0
+    publish_rate_hz: 10.0
+
+fsds_behavior_planner:
+  ros__parameters:
+    first_lap_speed_mps: 1.6
+    mapping_speed_mps: 2.2
+    race_speed_mps: 5.0
+    map_quality_for_full_mapping_speed: 0.55
+    map_quality_for_speed_profile: 0.65
+    startup_ramp_sec: 10.0
+    target_accel_limit_mps2: 0.40
+    target_decel_limit_mps2: 2.50
+    visible_curve_enabled: true
+    visible_curve_lookahead_m: 18.0
+    visible_curve_min_speed_mps: 1.1
+    visible_straight_speed_mps: 3.0
+    visible_curve_straight_angle_rad: 0.08
+    visible_curve_hard_angle_rad: 0.55
+    visible_curve_min_samples: 3
+    visible_curve_min_cones: 4
+    visible_curve_min_cone_confidence: 0.35
+    slow_distance_m: 8.0
+    brake_distance_m: 3.0
+    corridor_half_width_m: 1.4
+    track_half_width_m: 1.75
+    obstacle_avoid_enabled: true
+    obstacle_avoid_distance_m: 10.0
+    obstacle_avoid_offset_m: 0.85
+    obstacle_avoid_clearance_m: 0.55
+    obstacle_avoid_speed_mps: 1.4
+    obstacle_avoid_hold_sec: 1.0
+    obstacle_stop_if_blocked_distance_m: 5.0
+    publish_rate_hz: 30.0
+
+fsds_controller:
+  ros__parameters:
+    publish_rate_hz: 50.0
+    lookahead_m: 5.0
+    max_steering_angle_rad: 0.48
+    track_half_width_m: 1.75
+    throttle_kp: 0.12
+    brake_kp: 0.35
+    max_throttle: 0.55
+    max_brake: 0.80
+    max_path_offset_m: 1.0
+    launch_throttle: 0.45
+    launch_speed_threshold_mps: 0.60
+    local_cone_min_confidence: 0.35
+
+fsds_dataset_builder:
+  ros__parameters:
+    enabled: false
+    save_every_n_frames: 1
+    camera_topic: /fsds/cam1/image_color
+    camera_name: cam1
+    min_box_px: 6
+    camera_fov_deg: 90.0
+    own_vehicle_mask_top_fraction: 0.62
+    own_vehicle_mask_left_fraction: 0.12
+    own_vehicle_mask_right_fraction: 0.88
+    validate_projected_labels: true
+    snap_labels_to_image_color: true
+    label_search_scale: 2.6
+    label_color_min_pixels: 5
+    label_color_min_ratio: 0.012
+
+fsds_dataset_builder_cam1:
+  ros__parameters:
+    save_every_n_frames: 1
+    min_box_px: 6
+    camera_fov_deg: 90.0
+    own_vehicle_mask_top_fraction: 0.62
+    own_vehicle_mask_left_fraction: 0.12
+    own_vehicle_mask_right_fraction: 0.88
+    validate_projected_labels: true
+    snap_labels_to_image_color: true
+    label_search_scale: 2.6
+    label_color_min_pixels: 5
+    label_color_min_ratio: 0.012
+
+fsds_dataset_builder_cam2:
+  ros__parameters:
+    save_every_n_frames: 1
+    min_box_px: 6
+    camera_fov_deg: 90.0
+    own_vehicle_mask_top_fraction: 0.62
+    own_vehicle_mask_left_fraction: 0.12
+    own_vehicle_mask_right_fraction: 0.88
+    validate_projected_labels: true
+    snap_labels_to_image_color: true
+    label_search_scale: 2.6
+    label_color_min_pixels: 5
+    label_color_min_ratio: 0.012
+
+fsds_foxglove_visualizer:
+  ros__parameters:
+    publish_rate_hz: 10.0
+    max_local_cones: 80
+
+fsds_offtrack_reset_monitor:
+  ros__parameters:
+    enabled: true
+    offtrack_distance_m: 4.5
+    offtrack_hold_sec: 1.5
+    reset_cooldown_sec: 8.0
+    min_path_points: 8
