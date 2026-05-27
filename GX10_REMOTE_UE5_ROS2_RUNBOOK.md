@@ -978,6 +978,26 @@ Expected:
 
 If port `6080` is listening but port `5900` is not, restart `x11vnc`.
 
+If `x11vnc` prints `ListenOnTCPPort: Address already in use` or `Error: could not obtain listening port`, port `5900` is already owned by an older VNC backend. Check it:
+
+```bash
+ss -ltnp | rg ':5900\b'
+pgrep -af 'x11vnc'
+```
+
+If the listed process is `x11vnc`, keep it and start/restart only the noVNC proxy:
+
+```bash
+websockify --web=/usr/share/novnc/ 127.0.0.1:6080 127.0.0.1:5900
+```
+
+If the old backend is stale or stuck, stop both viewer services and restart terminal 1 and terminal 2:
+
+```bash
+pkill -f 'x11vnc .*5900' || true
+pkill -f 'websockify .*6080' || true
+```
+
 ### Simulator Window Does Not Appear
 
 Confirm the display and Vulkan path:

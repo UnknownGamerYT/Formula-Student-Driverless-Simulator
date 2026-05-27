@@ -2,10 +2,26 @@
 
 All `GX10` commands assume you are already SSHed into the GX10 or using a terminal on the GX10. Only `Your PC` commands run on your local machine.
 
-GX10 - new terminal 1: start VNC backend.
+GX10 - optional check: see whether VNC/noVNC are already running.
+
+```bash
+ss -ltnp | rg ':(5900|6080)\b' || true
+pgrep -af 'x11vnc|websockify|novnc' || true
+```
+
+If port `5900` already shows an `x11vnc` process, skip terminal 1 and continue with terminal 2. `Address already in use` means the VNC backend is already running, not that the display failed.
+
+GX10 - new terminal 1: start VNC backend if port `5900` is not already in use.
 
 ```bash
 x11vnc -display :1 -auth guess -rfbauth ~/.vnc/passwd -localhost -forever -shared -rfbport 5900
+```
+
+GX10 - optional: restart stale VNC/noVNC processes if the browser cannot connect or the old process is stuck.
+
+```bash
+pkill -f 'x11vnc .*5900' || true
+pkill -f 'websockify .*6080' || true
 ```
 
 GX10 - new terminal 2: start noVNC proxy.
