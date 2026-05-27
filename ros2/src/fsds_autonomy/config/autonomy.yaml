@@ -70,6 +70,7 @@ fsds_mapper:
     association_radius_m: 0.75
     save_period_sec: 5.0
     publish_rate_hz: 10.0
+    update_loaded_map_in_race_from_map: false
 
 fsds_behavior_planner:
   ros__parameters:

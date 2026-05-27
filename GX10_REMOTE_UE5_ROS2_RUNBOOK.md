@@ -125,7 +125,13 @@ CUDA: True NVIDIA GB10
 
 ### Model Weights
 
-The autonomy launch defaults to the RC repo's YOLO starting weight:
+The autonomy launch first looks for the newest fine-tuned cone model here:
+
+```text
+/home/hard/.fsds_autonomy/runs/fsds_cones/*/weights/best.pt
+```
+
+If a fine-tuned cone model exists, it is used automatically. If not, the launch falls back to the RC repo's YOLO starting weight:
 
 ```text
 /home/hard/Desktop/Driverless_FSD_HARD/ros2_ws/src/cone_detection_model/yolo26n.pt
@@ -149,6 +155,18 @@ python3 src/fsds_autonomy/tools/check_yolo_model.py \
 ```
 
 If this prints `NOT_A_CONE_MODEL`, the file is only a generic pretrained model. That is still useful as a training starting point, but live camera cone boxes will come from the low-trust HSV fallback until you fine-tune and launch with a cone model.
+
+Check the newest fine-tuned cone model:
+
+```bash
+cd /home/hard/Desktop/Formula-Student-Driverless-Simulator/ros2
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+CONE_MODEL="$(find /home/hard/.fsds_autonomy/runs/fsds_cones -path '*/weights/best.pt' -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR==1 {print $2}')"
+echo "${CONE_MODEL:-No fine-tuned cone model found}"
+test -n "$CONE_MODEL" && python3 src/fsds_autonomy/tools/check_yolo_model.py "$CONE_MODEL"
+```
 
 If it is missing, download/cache models after installing ML dependencies:
 
@@ -549,9 +567,14 @@ source install/setup.bash
 
 colcon build --packages-select fsds_autonomy_msgs fsds_autonomy --symlink-install
 
+CONE_MODEL="$(find /home/hard/.fsds_autonomy/runs/fsds_cones -path '*/weights/best.pt' -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR==1 {print $2}')"
+test -n "$CONE_MODEL" || CONE_MODEL="/home/hard/Desktop/Driverless_FSD_HARD/ros2_ws/src/cone_detection_model/yolo26n.pt"
+python3 src/fsds_autonomy/tools/check_yolo_model.py "$CONE_MODEL"
+
 ros2 launch fsds_autonomy fsds_autonomy.launch.py \
   map_dir:=/home/hard/.fsds_autonomy/maps \
   dataset_dir:=/home/hard/.fsds_autonomy/datasets/fsds_cones \
+  model_path:="$CONE_MODEL" \
   auto_reset_enabled:=true \
   dataset_enabled:=false
 ```
@@ -572,9 +595,14 @@ Leave this terminal running. This starts:
 For manual driving with autonomy perception/preview only, use the same launch but turn off control and auto reset:
 
 ```bash
+CONE_MODEL="$(find /home/hard/.fsds_autonomy/runs/fsds_cones -path '*/weights/best.pt' -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR==1 {print $2}')"
+test -n "$CONE_MODEL" || CONE_MODEL="/home/hard/Desktop/Driverless_FSD_HARD/ros2_ws/src/cone_detection_model/yolo26n.pt"
+python3 src/fsds_autonomy/tools/check_yolo_model.py "$CONE_MODEL"
+
 ros2 launch fsds_autonomy fsds_autonomy.launch.py \
   map_dir:=/home/hard/.fsds_autonomy/maps \
   dataset_dir:=/home/hard/.fsds_autonomy/datasets/fsds_cones \
+  model_path:="$CONE_MODEL" \
   control_enabled:=false \
   auto_reset_enabled:=false \
   dataset_enabled:=false

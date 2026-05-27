@@ -28,13 +28,18 @@ class Mapper(Node):
         self.declare_parameter("association_radius_m", 0.75)
         self.declare_parameter("save_period_sec", 5.0)
         self.declare_parameter("publish_rate_hz", 10.0)
+        self.declare_parameter("update_loaded_map_in_race_from_map", False)
 
         self.map_dir = Path(str(self.get_parameter("map_dir").value)).expanduser()
         self.association_radius = float(self.get_parameter("association_radius_m").value)
+        self.update_loaded_map_in_race_from_map = bool(
+            self.get_parameter("update_loaded_map_in_race_from_map").value
+        )
         self.track_id = "unknown"
         self.mode = "waiting_for_go"
         self.pose = None
         self.landmarks: list[ConeLandmark] = []
+        self.loaded_track_map: SavedTrackMap | None = None
         self.loaded_once = False
 
         self.map_pub = self.create_publisher(TrackMap, "/autonomy/track_map", 10)
@@ -53,17 +58,25 @@ class Mapper(Node):
         if msg.track_id and msg.track_id != self.track_id:
             self.track_id = msg.track_id
             self.landmarks = []
+            self.loaded_track_map = None
             self.loaded_once = False
         self.mode = msg.mode
         if not self.loaded_once and msg.map_loaded and msg.mode == "race_from_map":
             saved = load_track_map(self.map_dir, self.track_id)
             if saved and is_usable_track_map(saved):
-                self.landmarks = saved.cones
+                self.loaded_track_map = saved
+                self.landmarks = list(saved.cones)
                 self.get_logger().info(f"Loaded saved map for {self.track_id}: {len(self.landmarks)} cones")
             self.loaded_once = True
 
     def on_cones(self, msg: ConeArray) -> None:
         if self.pose is None or self.mode == "waiting_for_go":
+            return
+        if (
+            self.mode == "race_from_map"
+            and self.loaded_track_map is not None
+            and not self.update_loaded_map_in_race_from_map
+        ):
             return
         for cone in msg.cones:
             if cone.range > 25.0 or cone.confidence < 0.10:
@@ -103,6 +116,12 @@ class Mapper(Node):
         best.observations += 1
 
     def current_track_map(self) -> SavedTrackMap:
+        if (
+            self.mode == "race_from_map"
+            and self.loaded_track_map is not None
+            and not self.update_loaded_map_in_race_from_map
+        ):
+            return self.loaded_track_map
         centerline = build_centerline_from_cones(self.landmarks)
         racing_line, speed_profile = build_racing_line(centerline)
         quality = infer_map_quality(self.landmarks, centerline)
@@ -123,6 +142,12 @@ class Mapper(Node):
 
     def save_if_ready(self) -> None:
         if self.mode == "waiting_for_go" or len(self.landmarks) < 8:
+            return
+        if (
+            self.mode == "race_from_map"
+            and self.loaded_track_map is not None
+            and not self.update_loaded_map_in_race_from_map
+        ):
             return
         track_map = self.current_track_map()
         if not is_usable_track_map(track_map):

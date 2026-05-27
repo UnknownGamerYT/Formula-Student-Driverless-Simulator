@@ -21,7 +21,7 @@ from fsds_autonomy.constants import (
     is_start_finish_color,
 )
 from fsds_autonomy.geometry import point, pose2_from_pose_stamped, transform_global_to_local
-from fsds_autonomy.ml import OptionalYoloDetector, color_segment_cones
+from fsds_autonomy.ml import OptionalYoloDetector, color_segment_cones, non_max_suppression
 from fsds_autonomy.perception import CameraDetection
 from fsds_autonomy.ros_utils import cone_msg, make_header
 from fsds_autonomy.visualization import bgr_for_cone, project_car_point_to_camera
@@ -166,9 +166,10 @@ class CameraDetector(Node):
         backend = self.detector.display_name if self.detector.loaded else "HSV fallback"
         if not self.detector.available and not self.use_color_fallback:
             backend = "No detector"
-        detections = self.detector.detect(frame, camera_name) if self.detector.available else []
-        if not detections and self.use_color_fallback:
-            detections = color_segment_cones(
+        yolo_detections = self.detector.detect(frame, camera_name) if self.detector.available else []
+        fallback_detections = []
+        if self.use_color_fallback:
+            fallback_detections = color_segment_cones(
                 frame,
                 camera_name,
                 confidence=self.color_fallback_confidence,
@@ -181,13 +182,17 @@ class CameraDetector(Node):
                 own_vehicle_mask_right_fraction=self.color_fallback_own_vehicle_mask_right,
                 camera_fov_deg=self.camera_fov_deg,
             )
-            if not self.detector.available:
-                if self.detector.loaded:
-                    backend = f"{self.detector.display_name} + HSV fallback low-trust"
-                else:
-                    backend = "HSV fallback low-trust"
-            elif detections:
+        detections = non_max_suppression(
+            sorted(yolo_detections + fallback_detections, key=lambda item: item.confidence, reverse=True),
+            max(30, len(yolo_detections) + self.color_fallback_max_detections),
+        )
+        if self.use_color_fallback:
+            if self.detector.available:
+                backend = f"{self.detector.display_name} + HSV backup"
+            elif self.detector.loaded:
                 backend = f"{self.detector.display_name} + HSV fallback low-trust"
+            else:
+                backend = "HSV fallback low-trust"
 
         self.latest_camera_detections[camera_name] = CameraObservation(detections, self.stamp_sec(msg))
         self.publish_camera_cones()

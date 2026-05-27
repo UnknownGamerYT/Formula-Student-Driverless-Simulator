@@ -11,11 +11,26 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
+def default_model_path() -> str:
+    cone_run_dir = Path.home() / ".fsds_autonomy" / "runs" / "fsds_cones"
+    candidates = []
+    if cone_run_dir.exists():
+        candidates = sorted(
+            cone_run_dir.glob("*/weights/best.pt"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+    if candidates:
+        return str(candidates[0])
+
+    rc_model = Path("/home/hard/Desktop/Driverless_FSD_HARD/ros2_ws/src/cone_detection_model/yolo26n.pt")
+    return str(rc_model) if rc_model.exists() else ""
+
+
 def generate_launch_description() -> LaunchDescription:
     share_dir = Path(get_package_share_directory("fsds_autonomy"))
     config_path = share_dir / "config" / "autonomy.yaml"
-    rc_model = Path("/home/hard/Desktop/Driverless_FSD_HARD/ros2_ws/src/cone_detection_model/yolo26n.pt")
-    model_default = str(rc_model) if rc_model.exists() else ""
+    model_default = default_model_path()
     map_default = os.path.join(os.path.expanduser("~"), ".fsds_autonomy", "maps")
     dataset_default = os.path.join(os.path.expanduser("~"), ".fsds_autonomy", "datasets", "fsds_cones")
 

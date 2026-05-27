@@ -79,7 +79,10 @@ cd /home/hard/Desktop/Formula-Student-Driverless-Simulator/ros2
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 colcon build --packages-select fsds_autonomy_msgs fsds_autonomy --symlink-install
-ros2 launch fsds_autonomy fsds_autonomy.launch.py map_dir:=/home/hard/.fsds_autonomy/maps dataset_dir:=/home/hard/.fsds_autonomy/datasets/fsds_cones auto_reset_enabled:=true dataset_enabled:=false
+CONE_MODEL="$(find /home/hard/.fsds_autonomy/runs/fsds_cones -path '*/weights/best.pt' -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR==1 {print $2}')"
+test -n "$CONE_MODEL" || CONE_MODEL="/home/hard/Desktop/Driverless_FSD_HARD/ros2_ws/src/cone_detection_model/yolo26n.pt"
+python3 src/fsds_autonomy/tools/check_yolo_model.py "$CONE_MODEL"
+ros2 launch fsds_autonomy fsds_autonomy.launch.py map_dir:=/home/hard/.fsds_autonomy/maps dataset_dir:=/home/hard/.fsds_autonomy/datasets/fsds_cones model_path:="$CONE_MODEL" auto_reset_enabled:=true dataset_enabled:=false
 ```
 
 This command does not start live RL. It maps first, speeds up only when the visible cone corridor looks straight, slows for visible curves, avoids obstacles with a temporary path offset when there is room, stops if the corridor is blocked, saves the map, then uses the saved racing line on later runs. Start residual RL only after a map exists.
@@ -91,7 +94,10 @@ cd /home/hard/Desktop/Formula-Student-Driverless-Simulator/ros2
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 colcon build --packages-select fsds_autonomy_msgs fsds_autonomy --symlink-install
-ros2 launch fsds_autonomy fsds_autonomy.launch.py map_dir:=/home/hard/.fsds_autonomy/maps dataset_dir:=/home/hard/.fsds_autonomy/datasets/fsds_cones control_enabled:=false auto_reset_enabled:=false dataset_enabled:=false
+CONE_MODEL="$(find /home/hard/.fsds_autonomy/runs/fsds_cones -path '*/weights/best.pt' -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR==1 {print $2}')"
+test -n "$CONE_MODEL" || CONE_MODEL="/home/hard/Desktop/Driverless_FSD_HARD/ros2_ws/src/cone_detection_model/yolo26n.pt"
+python3 src/fsds_autonomy/tools/check_yolo_model.py "$CONE_MODEL"
+ros2 launch fsds_autonomy fsds_autonomy.launch.py map_dir:=/home/hard/.fsds_autonomy/maps dataset_dir:=/home/hard/.fsds_autonomy/datasets/fsds_cones model_path:="$CONE_MODEL" control_enabled:=false auto_reset_enabled:=false dataset_enabled:=false
 ```
 
 This preview command keeps camera detection, stereo triangulation, confidence overlays, map/racing-line projection, behavior preview, and Foxglove topics running while you manually drive. It does not publish `/fsds/control_command` and it does not auto-reset the simulator.
@@ -140,10 +146,12 @@ GX10 - optional: check whether the configured YOLO weights are actually cone-tra
 cd /home/hard/Desktop/Formula-Student-Driverless-Simulator/ros2
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-python3 src/fsds_autonomy/tools/check_yolo_model.py /home/hard/Desktop/Driverless_FSD_HARD/ros2_ws/src/cone_detection_model/yolo26n.pt
+CONE_MODEL="$(find /home/hard/.fsds_autonomy/runs/fsds_cones -path '*/weights/best.pt' -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR==1 {print $2}')"
+echo "${CONE_MODEL:-No fine-tuned cone model found}"
+test -n "$CONE_MODEL" && python3 src/fsds_autonomy/tools/check_yolo_model.py "$CONE_MODEL"
 ```
 
-If this prints `NOT_A_CONE_MODEL`, camera boxes are coming from the low-trust HSV fallback until a fine-tuned cone model is trained and launched with `model_path:=...`.
+The autonomy launch now prefers the newest `/home/hard/.fsds_autonomy/runs/fsds_cones/*/weights/best.pt` model automatically. If no fine-tuned model exists, it falls back to the RC repo `yolo26n.pt`; that file is usually a generic COCO model, so cone boxes will come from the low-trust HSV fallback until a cone model is trained.
 
 GX10 - optional: manual reset.
 
