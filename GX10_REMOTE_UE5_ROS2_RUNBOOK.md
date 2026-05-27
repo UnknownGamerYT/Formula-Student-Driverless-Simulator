@@ -945,7 +945,7 @@ DISPLAY=:1 xset dpms force on
 Check for the GNOME lock/guard window:
 
 ```bash
-DISPLAY=:1 xwininfo -root -tree | rg 'mutter guard|Formula|Blocks|FSOnline'
+DISPLAY=:1 xwininfo -root -tree | grep -E 'mutter guard|Formula|Blocks|FSOnline'
 ```
 
 If the lock screen is present, unlock it in noVNC.
@@ -966,7 +966,7 @@ If there is no `X1` and only `X0` exists, the GX10 is likely at the GDM login sc
 Check ports on the GX10:
 
 ```bash
-ss -ltnp | rg ':5900|:6080'
+ss -ltnp | grep -E ':5900|:6080'
 ```
 
 Expected:
@@ -981,7 +981,7 @@ If port `6080` is listening but port `5900` is not, restart `x11vnc`.
 If `x11vnc` prints `ListenOnTCPPort: Address already in use` or `Error: could not obtain listening port`, port `5900` is already owned by an older VNC backend. Check it:
 
 ```bash
-ss -ltnp | rg ':5900\b'
+ss -ltnp | grep -E ':5900'
 pgrep -af 'x11vnc'
 ```
 

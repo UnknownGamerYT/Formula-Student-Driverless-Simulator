@@ -5,7 +5,7 @@ All `GX10` commands assume you are already SSHed into the GX10 or using a termin
 GX10 - optional check: see whether VNC/noVNC are already running.
 
 ```bash
-ss -ltnp | rg ':(5900|6080)\b' || true
+ss -ltnp | grep -E ':(5900|6080)' || true
 pgrep -af 'x11vnc|websockify|novnc' || true
 ```
 
