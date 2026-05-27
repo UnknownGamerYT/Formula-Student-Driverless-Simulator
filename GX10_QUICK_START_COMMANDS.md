@@ -20,8 +20,11 @@ x11vnc -display :1 -auth guess -rfbauth ~/.vnc/passwd -localhost -forever -share
 GX10 - optional: restart stale VNC/noVNC processes if the browser cannot connect or the old process is stuck.
 
 ```bash
-pkill -f 'x11vnc .*5900' || true
-pkill -f 'websockify .*6080' || true
+pgrep -f '[w]ebsockify.*6080' | xargs -r kill
+pgrep -f '[x]11vnc.*5900' | xargs -r kill
+sleep 2
+pgrep -f '[w]ebsockify.*6080' | xargs -r kill -9
+pgrep -f '[x]11vnc.*5900' | xargs -r kill -9
 ```
 
 GX10 - new terminal 2: start noVNC proxy.

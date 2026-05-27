@@ -994,8 +994,11 @@ websockify --web=/usr/share/novnc/ 127.0.0.1:6080 127.0.0.1:5900
 If the old backend is stale or stuck, stop both viewer services and restart terminal 1 and terminal 2:
 
 ```bash
-pkill -f 'x11vnc .*5900' || true
-pkill -f 'websockify .*6080' || true
+pgrep -f '[w]ebsockify.*6080' | xargs -r kill
+pgrep -f '[x]11vnc.*5900' | xargs -r kill
+sleep 2
+pgrep -f '[w]ebsockify.*6080' | xargs -r kill -9
+pgrep -f '[x]11vnc.*5900' | xargs -r kill -9
 ```
 
 ### Simulator Window Does Not Appear
