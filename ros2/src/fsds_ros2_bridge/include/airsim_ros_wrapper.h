@@ -114,7 +114,7 @@ struct SimpleMatrix
 class AirsimROSWrapper
 {
 public:
-    AirsimROSWrapper(const std::shared_ptr<rclcpp::Node>& nh, const std::string& host_ip, double timeout_sec);
+    AirsimROSWrapper(const std::shared_ptr<rclcpp::Node>& nh, const std::string& host_ip, uint16_t api_port, double timeout_sec);
     ~AirsimROSWrapper(){};
 
     void initialize_airsim(double timeout_sec);

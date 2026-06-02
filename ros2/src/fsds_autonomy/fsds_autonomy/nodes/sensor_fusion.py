@@ -15,34 +15,40 @@ from fsds_autonomy.ros_utils import cone_msg, make_header
 class SensorFusion(Node):
     def __init__(self) -> None:
         super().__init__("fsds_sensor_fusion")
-        self.declare_parameter("bearing_gate_rad", 0.18)
-        self.declare_parameter("range_gate_m", 5.0)
+        self.declare_parameter("bearing_gate_rad", 0.10)
+        self.declare_parameter("range_gate_m", 2.0)
         self.declare_parameter("include_camera_only_geometry", False)
-        self.declare_parameter("include_stereo_camera_geometry", True)
+        self.declare_parameter("include_stereo_camera_geometry", False)
+        self.declare_parameter("min_output_cone_confidence", 0.50)
         self.declare_parameter("camera_only_min_confidence", 0.65)
-        self.declare_parameter("stereo_camera_min_confidence", 0.45)
-        self.declare_parameter("stereo_position_gate_m", 2.0)
+        self.declare_parameter("stereo_camera_min_confidence", 0.50)
+        self.declare_parameter("stereo_position_gate_m", 0.90)
         self.declare_parameter("stereo_lidar_position_blend", 0.35)
+        self.declare_parameter("duplicate_cone_distance_m", 0.65)
         self.declare_parameter("diagnostics_enabled", True)
         self.declare_parameter("diagnostics_publish_rate_hz", 5.0)
         self.declare_parameter("diagnostics_warn_distance_m", 0.75)
         self.declare_parameter("diagnostics_error_distance_m", 1.50)
         self.declare_parameter("diagnostics_max_rows", 12)
+        self.declare_parameter("diagnostics_only_used_stereo", True)
         self.declare_parameter("publish_rate_hz", 30.0)
 
         self.bearing_gate = float(self.get_parameter("bearing_gate_rad").value)
         self.range_gate = float(self.get_parameter("range_gate_m").value)
         self.include_camera_only_geometry = bool(self.get_parameter("include_camera_only_geometry").value)
         self.include_stereo_camera_geometry = bool(self.get_parameter("include_stereo_camera_geometry").value)
+        self.min_output_cone_confidence = float(self.get_parameter("min_output_cone_confidence").value)
         self.camera_only_min_confidence = float(self.get_parameter("camera_only_min_confidence").value)
         self.stereo_camera_min_confidence = float(self.get_parameter("stereo_camera_min_confidence").value)
         self.stereo_position_gate = float(self.get_parameter("stereo_position_gate_m").value)
         self.stereo_lidar_position_blend = float(self.get_parameter("stereo_lidar_position_blend").value)
+        self.duplicate_cone_distance = float(self.get_parameter("duplicate_cone_distance_m").value)
         self.diagnostics_enabled = bool(self.get_parameter("diagnostics_enabled").value)
         self.diagnostics_publish_rate = float(self.get_parameter("diagnostics_publish_rate_hz").value)
         self.diagnostics_warn_distance = float(self.get_parameter("diagnostics_warn_distance_m").value)
         self.diagnostics_error_distance = float(self.get_parameter("diagnostics_error_distance_m").value)
         self.diagnostics_max_rows = int(self.get_parameter("diagnostics_max_rows").value)
+        self.diagnostics_only_used_stereo = bool(self.get_parameter("diagnostics_only_used_stereo").value)
         self.latest_lidar = ConeArray()
         self.latest_camera = ConeArray()
         self.last_diagnostics_time = self.get_clock().now()
@@ -57,6 +63,9 @@ class SensorFusion(Node):
     def is_stereo_cone(self, cone) -> bool:
         return STEREO_CAMERA_SOURCE in cone.source
 
+    def camera_min_confidence(self, cone) -> float:
+        return self.stereo_camera_min_confidence if self.is_stereo_cone(cone) else self.camera_only_min_confidence
+
     def position_distance(self, first, second) -> float:
         return math.hypot(
             float(first.position.x) - float(second.position.x),
@@ -70,6 +79,8 @@ class SensorFusion(Node):
         )
 
     def match_score(self, lidar_cone, camera_cone) -> float | None:
+        if camera_cone.confidence < self.camera_min_confidence(camera_cone):
+            return None
         bearing_diff = abs(
             math.atan2(
                 math.sin(lidar_cone.bearing - camera_cone.bearing),
@@ -142,16 +153,21 @@ class SensorFusion(Node):
         rows = []
         status_counts = {"OK": 0, "WARN": 0, "ERROR": 0, "NO_LIDAR": 0}
         max_error = 0.0
+        ignored_stereo = 0
 
         for stereo_index, stereo_cone in stereo:
+            used_for_output = stereo_index in fused_camera_indices
             lidar_index, lidar_cone, position_error = self.nearest_lidar(stereo_cone)
             if lidar_cone is None:
-                status_counts["NO_LIDAR"] += 1
+                if used_for_output or not self.diagnostics_only_used_stereo:
+                    status_counts["NO_LIDAR"] += 1
+                else:
+                    ignored_stereo += 1
                 rows.append(
                     (
                         float("inf"),
                         (
-                            f"NO_LIDAR stereo[{stereo_index}] fused={stereo_index in fused_camera_indices} "
+                            f"{'NO_LIDAR' if used_for_output else 'IGNORED'} stereo[{stereo_index}] fused={used_for_output} "
                             f"stereo=({stereo_cone.position.x:.2f},{stereo_cone.position.y:.2f}) "
                             f"r={stereo_cone.range:.2f}m b={math.degrees(stereo_cone.bearing):+.1f}deg "
                             f"conf={stereo_cone.confidence:.2f} color={self.color_name(stereo_cone.color)}"
@@ -165,14 +181,19 @@ class SensorFusion(Node):
             dr = stereo_cone.range - lidar_cone.range
             db = math.degrees(self.bearing_delta(stereo_cone, lidar_cone))
             status = self.diagnostic_status(position_error)
-            status_counts[status] += 1
-            max_error = max(max_error, position_error)
+            reported_status = status
+            if used_for_output or not self.diagnostics_only_used_stereo:
+                status_counts[status] += 1
+                max_error = max(max_error, position_error)
+            else:
+                ignored_stereo += 1
+                reported_status = "IGNORED"
             rows.append(
                 (
                     position_error,
                     (
-                        f"{status} stereo[{stereo_index}] nearest_lidar[{lidar_index}] "
-                        f"matched={stereo_index in matched_camera_indices} fused={stereo_index in fused_camera_indices} "
+                        f"{reported_status} stereo[{stereo_index}] nearest_lidar[{lidar_index}] "
+                        f"matched={stereo_index in matched_camera_indices} fused={used_for_output} "
                         f"dist_error={position_error:.2f}m dx={dx:+.2f}m dy={dy:+.2f}m "
                         f"range_error={dr:+.2f}m bearing_error={db:+.1f}deg | "
                         f"lidar={lidar_cone.source} ({lidar_cone.position.x:.2f},{lidar_cone.position.y:.2f}) "
@@ -193,13 +214,15 @@ class SensorFusion(Node):
             overall = "ERROR"
         if not stereo:
             overall = "NO_STEREO"
+        elif self.diagnostics_only_used_stereo and not any(status_counts.values()):
+            overall = "NO_USED_STEREO"
 
         lines = [
             (
                 f"status={overall} lidar={len(self.latest_lidar.cones)} stereo={len(stereo)} "
                 f"matched={len(matched_camera_indices)} fused_stereo={len(fused_camera_indices)} "
                 f"ok={status_counts['OK']} warn={status_counts['WARN']} error={status_counts['ERROR']} "
-                f"no_lidar={status_counts['NO_LIDAR']} max_error={max_error:.2f}m "
+                f"no_lidar={status_counts['NO_LIDAR']} ignored_stereo={ignored_stereo} max_error={max_error:.2f}m "
                 f"warn_at={self.diagnostics_warn_distance:.2f}m error_at={self.diagnostics_error_distance:.2f}m"
             )
         ]
@@ -229,6 +252,8 @@ class SensorFusion(Node):
             best_index = None
             best_score = float("inf")
             for index, camera_cone in enumerate(self.latest_camera.cones):
+                if index in used_camera:
+                    continue
                 score = self.match_score(lidar_cone, camera_cone)
                 if score is not None and score < best_score:
                     best_index = index
@@ -251,17 +276,18 @@ class SensorFusion(Node):
                 confidence = min(1.0, max(confidence, camera_cone.confidence) + confidence_bonus)
                 source = f"{lidar_cone.source}+{camera_cone.source}"
 
-            fused.cones.append(
-                cone_msg(
-                    header,
-                    x,
-                    y,
-                    z,
-                    color,
-                    confidence,
-                    source,
+            if confidence >= self.min_output_cone_confidence:
+                fused.cones.append(
+                    cone_msg(
+                        header,
+                        x,
+                        y,
+                        z,
+                        color,
+                        confidence,
+                        source,
+                    )
                 )
-            )
 
         for index, camera_cone in enumerate(self.latest_camera.cones):
             is_stereo = self.is_stereo_cone(camera_cone)
@@ -273,10 +299,13 @@ class SensorFusion(Node):
                 continue
             if camera_cone.color == ConeColor.UNKNOWN:
                 continue
-            min_confidence = self.stereo_camera_min_confidence if is_stereo else self.camera_only_min_confidence
+            min_confidence = self.camera_min_confidence(camera_cone)
             if camera_cone.confidence < min_confidence:
                 continue
             confidence_scale = 0.85 if is_stereo else 0.6
+            confidence = max(0.15, camera_cone.confidence * confidence_scale)
+            if confidence < self.min_output_cone_confidence:
+                continue
             if is_stereo:
                 fused_camera_indices.add(index)
             fused.cones.append(
@@ -286,13 +315,31 @@ class SensorFusion(Node):
                     camera_cone.position.y,
                     camera_cone.position.z,
                     camera_cone.color,
-                    max(0.15, camera_cone.confidence * confidence_scale),
+                    confidence,
                     camera_cone.source,
                 )
             )
 
+        fused.cones = self.deduped_cones(fused.cones)
         self.pub.publish(fused)
         self.publish_diagnostics(used_camera, fused_camera_indices)
+
+    def deduped_cones(self, cones) -> list:
+        deduped = []
+        for cone in sorted(cones, key=self.cone_score, reverse=True):
+            if any(self.position_distance(cone, kept) <= self.duplicate_cone_distance for kept in deduped):
+                continue
+            deduped.append(cone)
+        return deduped
+
+    def cone_score(self, cone) -> float:
+        source = str(cone.source)
+        source_bonus = 0.0
+        if "Lidar" in source:
+            source_bonus += 0.15
+        if STEREO_CAMERA_SOURCE in source:
+            source_bonus += 0.10
+        return float(cone.confidence) + source_bonus
 
 
 def main() -> None:

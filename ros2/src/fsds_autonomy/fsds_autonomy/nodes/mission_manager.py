@@ -41,7 +41,7 @@ class MissionManager(Node):
         self.mission = new_mission
         self.track_id = new_track
         saved_map = load_track_map(self.map_dir, self.track_id)
-        self.map_loaded = saved_map is not None and is_usable_track_map(saved_map)
+        self.map_loaded = saved_map is not None and is_usable_track_map(saved_map, require_closed_loop=True)
 
         if self.mission == "autocross":
             if changed:
@@ -55,8 +55,8 @@ class MissionManager(Node):
             self.mode = "race_from_map"
         else:
             self.mode = "learn_race"
-            if saved_map is not None and not is_usable_track_map(saved_map):
-                reasons = "; ".join(track_map_sanity_reasons(saved_map))
+            if saved_map is not None and not is_usable_track_map(saved_map, require_closed_loop=True):
+                reasons = "; ".join(track_map_sanity_reasons(saved_map, require_closed_loop=True))
                 self.get_logger().warn(
                     f"Ignoring unusable saved map for {self.track_id}: "
                     f"centerline={len(saved_map.centerline)} racing_line={len(saved_map.racing_line)} "

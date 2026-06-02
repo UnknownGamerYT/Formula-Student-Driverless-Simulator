@@ -23,13 +23,26 @@ HSV_THRESHOLDS = {
 
 
 class OptionalYoloDetector:
-    def __init__(self, model_path: str, confidence: float = 0.45):
+    def __init__(
+        self,
+        model_path: str,
+        confidence: float = 0.45,
+        imgsz: int = 960,
+        device: str = "auto",
+        warmup: bool = True,
+    ):
         self.model = None
         self.names = {}
         self.cone_class_ids: set[int] = set()
         self.confidence = confidence
+        self.imgsz = int(imgsz)
         self.model_path = model_path
+        self.device = str(device or "auto")
+        self.predict_device = None if self.device.lower() in {"", "auto", "none"} else self.device
+        self.backend = "unavailable"
         self.display_name = "YOLO unavailable"
+        self.load_error = ""
+        self.warmup_error = ""
         if not model_path:
             return
         path = Path(model_path).expanduser()
@@ -38,22 +51,50 @@ class OptionalYoloDetector:
         try:
             from ultralytics import YOLO
 
-            self.model = YOLO(str(path) if path.exists() else model_path)
-            self.names = getattr(self.model, "names", {}) or {}
+            model_source = str(path) if path.exists() else model_path
+            self.model = YOLO(model_source)
+            self.names = self._normalise_names(getattr(self.model, "names", {}) or {})
             self.cone_class_ids = {
                 int(index)
                 for index, name in self.names.items()
                 if str(name) in CONE_CLASS_TO_COLOR or "cone" in str(name).lower()
             }
+            self.backend = self._backend_name(path if path.exists() else Path(model_path))
+            model_label = path.name if path.exists() else model_path
             if self.cone_class_ids:
-                self.display_name = f"YOLO {path.name if path.exists() else model_path}"
+                self.display_name = f"YOLO {self.backend} {model_label}"
             else:
-                self.display_name = f"YOLO non-cone classes {path.name if path.exists() else model_path}"
-        except Exception:
+                self.display_name = f"YOLO {self.backend} non-cone classes {model_label}"
+            if warmup and self.cone_class_ids:
+                self.warmup()
+        except Exception as exc:
             self.model = None
             self.names = {}
             self.cone_class_ids = set()
             self.display_name = "YOLO unavailable"
+            self.backend = "unavailable"
+            self.load_error = str(exc)
+
+    def _normalise_names(self, names) -> dict[int, str]:
+        if isinstance(names, dict):
+            return {int(index): str(name) for index, name in names.items()}
+        if isinstance(names, (list, tuple)):
+            return {index: str(name) for index, name in enumerate(names)}
+        return {}
+
+    def _backend_name(self, path: Path) -> str:
+        suffix = path.suffix.lower()
+        if suffix == ".engine":
+            return "TensorRT"
+        if suffix == ".onnx":
+            return "ONNX"
+        if suffix == ".pt":
+            return "PyTorch"
+        if suffix == ".torchscript":
+            return "TorchScript"
+        if suffix:
+            return suffix.lstrip(".")
+        return "Ultralytics"
 
     @property
     def loaded(self) -> bool:
@@ -63,10 +104,31 @@ class OptionalYoloDetector:
     def available(self) -> bool:
         return self.model is not None and bool(self.cone_class_ids)
 
+    def _predict_kwargs(self, frame_bgr: np.ndarray) -> dict:
+        kwargs = {
+            "source": frame_bgr,
+            "conf": self.confidence,
+            "imgsz": self.imgsz,
+            "verbose": False,
+        }
+        if self.predict_device is not None:
+            kwargs["device"] = self.predict_device
+        return kwargs
+
+    def warmup(self) -> None:
+        if not self.model:
+            return
+        try:
+            warmup_size = max(32, self.imgsz)
+            dummy = np.zeros((warmup_size, warmup_size, 3), dtype=np.uint8)
+            self.model.predict(**self._predict_kwargs(dummy))
+        except Exception as exc:
+            self.warmup_error = str(exc)
+
     def detect(self, frame_bgr: np.ndarray, source: str) -> list[CameraDetection]:
         if not self.available:
             return []
-        results = self.model.predict(source=frame_bgr, conf=self.confidence, verbose=False)
+        results = self.model.predict(**self._predict_kwargs(frame_bgr))
         detections: list[CameraDetection] = []
         height, width = frame_bgr.shape[:2]
         focal_px = width / (2.0 * math.tan(math.radians(DEFAULT_CAMERA_FOV_DEG) * 0.5))
@@ -223,10 +285,64 @@ def bbox_iou(left: tuple[int, int, int, int], right: tuple[int, int, int, int]) 
     return intersection / float(left_area + right_area - intersection)
 
 
-def non_max_suppression(detections: list[CameraDetection], max_detections: int, iou_threshold: float = 0.32) -> list[CameraDetection]:
+def bbox_overlap_fraction(left: tuple[int, int, int, int], right: tuple[int, int, int, int]) -> float:
+    lx1, ly1, lx2, ly2 = left
+    rx1, ry1, rx2, ry2 = right
+    ix1 = max(lx1, rx1)
+    iy1 = max(ly1, ry1)
+    ix2 = min(lx2, rx2)
+    iy2 = min(ly2, ry2)
+    iw = max(0, ix2 - ix1)
+    ih = max(0, iy2 - iy1)
+    intersection = iw * ih
+    if intersection <= 0:
+        return 0.0
+    left_area = max(1, (lx2 - lx1) * (ly2 - ly1))
+    right_area = max(1, (rx2 - rx1) * (ry2 - ry1))
+    return intersection / float(min(left_area, right_area))
+
+
+def detection_local_distance(left: CameraDetection, right: CameraDetection) -> float:
+    left_x = left.range * math.cos(left.bearing)
+    left_y = left.range * math.sin(left.bearing)
+    right_x = right.range * math.cos(right.bearing)
+    right_y = right.range * math.sin(right.bearing)
+    return math.hypot(left_x - right_x, left_y - right_y)
+
+
+def duplicate_detection(
+    left: CameraDetection,
+    right: CameraDetection,
+    iou_threshold: float,
+    overlap_threshold: float,
+    local_distance_m: float,
+) -> bool:
+    overlaps = (
+        bbox_iou(left.bbox, right.bbox) > iou_threshold
+        or bbox_overlap_fraction(left.bbox, right.bbox) > overlap_threshold
+    )
+    return overlaps and detection_local_distance(left, right) <= local_distance_m
+
+
+def non_max_suppression(
+    detections: list[CameraDetection],
+    max_detections: int,
+    iou_threshold: float = 0.32,
+    overlap_threshold: float = 0.62,
+    duplicate_local_distance_m: float = 0.55,
+) -> list[CameraDetection]:
     selected: list[CameraDetection] = []
     for detection in detections:
-        if any(bbox_iou(detection.bbox, kept.bbox) > iou_threshold for kept in selected):
+        if any(
+            duplicate_detection(
+                detection,
+                kept,
+                iou_threshold,
+                overlap_threshold,
+                duplicate_local_distance_m,
+            )
+            for kept in selected
+        ):
             continue
         selected.append(detection)
         if len(selected) >= max_detections:

@@ -82,6 +82,8 @@ def track_map_to_msg(node, track_map: SavedTrackMap, frame_id: str = "fsds/map")
         )
         for cone in track_map.cones
     ]
+    msg.blue_boundary_line = [point(x, y, 0.0) for x, y in track_map.blue_boundary_line]
+    msg.yellow_boundary_line = [point(x, y, 0.0) for x, y in track_map.yellow_boundary_line]
     msg.centerline = [point(x, y, 0.0) for x, y in track_map.centerline]
     msg.racing_line = [point(x, y, 0.0) for x, y in track_map.racing_line]
     msg.speed_profile = [float(speed) for speed in track_map.speed_profile]
@@ -104,6 +106,8 @@ def track_map_from_msg(msg: TrackMap) -> SavedTrackMap:
             )
             for cone in msg.cones
         ],
+        blue_boundary_line=[(p.x, p.y) for p in msg.blue_boundary_line],
+        yellow_boundary_line=[(p.x, p.y) for p in msg.yellow_boundary_line],
         centerline=[(p.x, p.y) for p in msg.centerline],
         racing_line=[(p.x, p.y) for p in msg.racing_line],
         speed_profile=list(msg.speed_profile),

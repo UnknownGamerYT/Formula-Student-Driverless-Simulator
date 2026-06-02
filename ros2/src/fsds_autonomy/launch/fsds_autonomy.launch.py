@@ -16,7 +16,11 @@ def default_model_path() -> str:
     candidates = []
     if cone_run_dir.exists():
         candidates = sorted(
-            cone_run_dir.glob("*/weights/best.pt"),
+            [
+                path
+                for pattern in ("*/weights/best.engine", "*/weights/best.onnx", "*/weights/best.pt")
+                for path in cone_run_dir.glob(pattern)
+            ],
             key=lambda path: path.stat().st_mtime,
             reverse=True,
         )
@@ -42,6 +46,14 @@ def generate_launch_description() -> LaunchDescription:
     use_testing_odom = LaunchConfiguration("use_testing_odom")
     auto_reset_enabled = LaunchConfiguration("auto_reset_enabled")
     control_enabled = LaunchConfiguration("control_enabled")
+    drive_log_enabled = LaunchConfiguration("drive_log_enabled")
+    drive_log_dir = LaunchConfiguration("drive_log_dir")
+    drive_log_run_id = LaunchConfiguration("drive_log_run_id")
+    camera_enabled = LaunchConfiguration("camera_enabled")
+    mapper_enabled = LaunchConfiguration("mapper_enabled")
+    raceline_planner_enabled = LaunchConfiguration("raceline_planner_enabled")
+    saved_map_publisher_enabled = LaunchConfiguration("saved_map_publisher_enabled")
+    foxglove_visualizer_enabled = LaunchConfiguration("foxglove_visualizer_enabled")
 
     common_params = [config]
 
@@ -59,6 +71,17 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="true",
                 description="Set false for manual driving with autonomy perception, mapping, and camera preview only.",
             ),
+            DeclareLaunchArgument("drive_log_enabled", default_value="true"),
+            DeclareLaunchArgument("camera_enabled", default_value="true"),
+            DeclareLaunchArgument("mapper_enabled", default_value="true"),
+            DeclareLaunchArgument("raceline_planner_enabled", default_value="true"),
+            DeclareLaunchArgument("saved_map_publisher_enabled", default_value="false"),
+            DeclareLaunchArgument("foxglove_visualizer_enabled", default_value="true"),
+            DeclareLaunchArgument(
+                "drive_log_dir",
+                default_value=os.path.join(os.path.expanduser("~"), ".fsds_autonomy", "drive_logs"),
+            ),
+            DeclareLaunchArgument("drive_log_run_id", default_value=""),
             Node(
                 package="fsds_autonomy",
                 executable="mission_manager",
@@ -86,6 +109,7 @@ def generate_launch_description() -> LaunchDescription:
                 name="fsds_camera_detector",
                 output="screen",
                 parameters=[config, {"model_path": model_path}],
+                condition=IfCondition(camera_enabled),
             ),
             Node(
                 package="fsds_autonomy",
@@ -96,10 +120,19 @@ def generate_launch_description() -> LaunchDescription:
             ),
             Node(
                 package="fsds_autonomy",
+                executable="saved_map_publisher",
+                name="fsds_saved_map_publisher",
+                output="screen",
+                parameters=[config, {"map_dir": map_dir}],
+                condition=IfCondition(saved_map_publisher_enabled),
+            ),
+            Node(
+                package="fsds_autonomy",
                 executable="mapper",
                 name="fsds_mapper",
                 output="screen",
                 parameters=[config, {"map_dir": map_dir}],
+                condition=IfCondition(mapper_enabled),
             ),
             Node(
                 package="fsds_autonomy",
@@ -107,6 +140,7 @@ def generate_launch_description() -> LaunchDescription:
                 name="fsds_raceline_planner",
                 output="screen",
                 parameters=common_params,
+                condition=IfCondition(raceline_planner_enabled),
             ),
             Node(
                 package="fsds_autonomy",
@@ -125,6 +159,21 @@ def generate_launch_description() -> LaunchDescription:
             ),
             Node(
                 package="fsds_autonomy",
+                executable="drive_recorder",
+                name="fsds_drive_recorder",
+                output="screen",
+                parameters=[
+                    config,
+                    {
+                        "enabled": drive_log_enabled,
+                        "log_dir": drive_log_dir,
+                        "run_id": drive_log_run_id,
+                    },
+                ],
+                condition=IfCondition(drive_log_enabled),
+            ),
+            Node(
+                package="fsds_autonomy",
                 executable="dataset_builder",
                 name="fsds_dataset_builder_cam1",
                 output="screen",
@@ -137,6 +186,7 @@ def generate_launch_description() -> LaunchDescription:
                         "camera_name": "cam1",
                     },
                 ],
+                condition=IfCondition(dataset_enabled),
             ),
             Node(
                 package="fsds_autonomy",
@@ -152,6 +202,7 @@ def generate_launch_description() -> LaunchDescription:
                         "camera_name": "cam2",
                     },
                 ],
+                condition=IfCondition(dataset_enabled),
             ),
             Node(
                 package="fsds_autonomy",
@@ -159,13 +210,14 @@ def generate_launch_description() -> LaunchDescription:
                 name="fsds_foxglove_visualizer",
                 output="screen",
                 parameters=common_params,
+                condition=IfCondition(foxglove_visualizer_enabled),
             ),
             Node(
                 package="fsds_autonomy",
                 executable="offtrack_reset_monitor",
                 name="fsds_offtrack_reset_monitor",
                 output="screen",
-                parameters=[config, {"enabled": auto_reset_enabled}],
+                parameters=[config, {"enabled": auto_reset_enabled, "map_dir": map_dir}],
             ),
         ]
     )

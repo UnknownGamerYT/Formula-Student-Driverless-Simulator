@@ -29,7 +29,7 @@ def main() -> None:
     parser.add_argument("--data", required=True, help="Ultralytics dataset yaml")
     parser.add_argument("--model", required=True, help="Starting weights, e.g. yolo26n.pt")
     parser.add_argument("--epochs", type=int, default=80)
-    parser.add_argument("--imgsz", type=int, default=640)
+    parser.add_argument("--imgsz", type=int, default=960)
     parser.add_argument("--batch", type=parse_batch, default=16)
     parser.add_argument("--device", default=0)
     parser.add_argument("--cache", type=parse_cache, default=False)

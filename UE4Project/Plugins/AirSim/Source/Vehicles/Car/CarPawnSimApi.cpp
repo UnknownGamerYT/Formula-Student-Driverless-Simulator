@@ -7,6 +7,7 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "Camera/CameraComponent.h"
+#include "UObject/UObjectGlobals.h"
 
 #include "common/ClockFactory.hpp"
 #include "PIPCamera.h"
@@ -534,6 +535,11 @@ void CarPawnSimApi::setPose(const Pose& pose, bool ignore_collision)
 
 void CarPawnSimApi::setPoseInternal(const Pose& pose, bool ignore_collision)
 {
+    if (!IsValid(params_.pawn) || !params_.pawn->GetRootComponent() || !params_.pawn->GetRootComponent()->IsRegistered()) {
+        UE_LOG(LogTemp, Warning, TEXT("CarPawnSimApi::setPoseInternal skipped because the car pawn is not registered"));
+        return;
+    }
+
     //translate to new CarPawnSimApi position & orientation from NED to NEU
     FVector position = ned_transform_.fromLocalEnu(pose.position);
     state_.current_position = position;
@@ -665,12 +671,23 @@ void CarPawnSimApi::updateMovement(const msr::airlib::CarApiBase::CarControls& c
 
 void CarPawnSimApi::resetPawn()
 {
+    if (!IsValid(pawn_) || !IsValid(movement_)) {
+        UE_LOG(LogTemp, Warning, TEXT("CarPawnSimApi::resetPawn skipped because the car pawn or movement component is invalid"));
+        return;
+    }
+
     vehicle_api_->reset();
 
     last_controls_ = msr::airlib::CarApiBase::CarControls();
     auto phys_comps = UAirBlueprintLib::getPhysicsComponents(pawn_);
-    UAirBlueprintLib::RunCommandOnGameThread([this, &phys_comps]() {
+    UAirBlueprintLib::RunCommandOnGameThread([this, phys_comps]() {
+        if (!IsValid(movement_) || !movement_->IsRegistered()) {
+            UE_LOG(LogTemp, Warning, TEXT("CarPawnSimApi::resetPawn skipped movement reset because the movement component is not registered"));
+            return;
+        }
         for (auto* phys_comp : phys_comps) {
+            if (!IsValid(phys_comp) || !phys_comp->IsRegistered())
+                continue;
             phys_comp->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
             phys_comp->SetPhysicsLinearVelocity(FVector::ZeroVector);
             phys_comp->SetSimulatePhysics(false);
@@ -691,9 +708,12 @@ void CarPawnSimApi::resetPawn()
         }
     }, true);
 
-    UAirBlueprintLib::RunCommandOnGameThread([this, &phys_comps]() {
-        for (auto* phys_comp : phys_comps)
+    UAirBlueprintLib::RunCommandOnGameThread([phys_comps]() {
+        for (auto* phys_comp : phys_comps) {
+            if (!IsValid(phys_comp) || !phys_comp->IsRegistered())
+                continue;
             phys_comp->SetSimulatePhysics(true);
+        }
     }, true);
 }
 

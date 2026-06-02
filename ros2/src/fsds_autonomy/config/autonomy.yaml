@@ -6,6 +6,16 @@ fsds_mission_manager:
 fsds_state_estimator:
   ros__parameters:
     use_testing_odom: false
+    use_gps_position: true
+    gps_correction_alpha: 0.65
+    gps_max_std_m: 5.0
+    gps_max_jump_m: 25.0
+    gps_use_configured_origin: false
+    gps_origin_latitude: 0.0
+    gps_origin_longitude: 0.0
+    publish_tf: true
+    map_frame_id: fsds/map
+    vehicle_frame_id: fsds/FSCar
     publish_rate_hz: 50.0
 
 fsds_lidar_cone_detector:
@@ -22,26 +32,36 @@ fsds_camera_detector:
   ros__parameters:
     cam1_topic: /fsds/cam1/image_color
     cam2_topic: /fsds/cam2/image_color
-    confidence: 0.55
+    confidence: 0.35
+    yolo_imgsz: 960
+    yolo_device: auto
+    yolo_warmup: true
     use_color_fallback: true
     color_fallback_confidence: 0.28
-    color_fallback_min_area_px: 120
-    color_fallback_max_detections: 20
-    color_fallback_roi_top_fraction: 0.34
+    color_fallback_min_area_px: 24
+    color_fallback_max_detections: 40
+    color_fallback_roi_top_fraction: 0.12
     color_fallback_roi_bottom_fraction: 0.84
     color_fallback_own_vehicle_mask_top_fraction: 0.62
     color_fallback_own_vehicle_mask_left_fraction: 0.12
     color_fallback_own_vehicle_mask_right_fraction: 0.88
+    duplicate_bbox_iou_threshold: 0.32
+    duplicate_bbox_overlap_threshold: 0.62
+    duplicate_local_distance_m: 0.55
+    duplicate_cone_distance_m: 0.45
     publish_debug_image: true
+    publish_run_image: true
     overlay_camera_name: cam1
     camera_fov_deg: 90.0
     track_half_width_m: 1.75
-    overlay_min_boundary_confidence: 0.30
+    overlay_min_boundary_confidence: 0.25
     overlay_path_min_quality: 0.35
     overlay_max_range_m: 22.0
+    overlay_path_max_error_m: 5.0
+    overlay_path_max_step_m: 8.0
     stereo_enabled: true
     stereo_max_time_delta_sec: 0.30
-    stereo_min_confidence: 0.45
+    stereo_min_confidence: 0.50
     stereo_min_disparity_rad: 0.006
     stereo_good_disparity_rad: 0.025
     stereo_max_range_m: 25.0
@@ -50,47 +70,113 @@ fsds_camera_detector:
 
 fsds_sensor_fusion:
   ros__parameters:
-    bearing_gate_rad: 0.18
-    range_gate_m: 5.0
+    bearing_gate_rad: 0.10
+    range_gate_m: 2.0
     include_camera_only_geometry: false
-    include_stereo_camera_geometry: true
+    include_stereo_camera_geometry: false
+    min_output_cone_confidence: 0.50
     camera_only_min_confidence: 0.65
-    stereo_camera_min_confidence: 0.45
-    stereo_position_gate_m: 2.0
+    stereo_camera_min_confidence: 0.50
+    stereo_position_gate_m: 0.90
     stereo_lidar_position_blend: 0.35
+    duplicate_cone_distance_m: 0.65
     diagnostics_enabled: true
     diagnostics_publish_rate_hz: 5.0
     diagnostics_warn_distance_m: 0.75
     diagnostics_error_distance_m: 1.50
     diagnostics_max_rows: 12
+    diagnostics_only_used_stereo: true
     publish_rate_hz: 30.0
 
 fsds_mapper:
   ros__parameters:
-    association_radius_m: 0.75
+    association_radius_m: 1.40
     save_period_sec: 5.0
     publish_rate_hz: 10.0
-    update_loaded_map_in_race_from_map: false
+    update_loaded_map_in_race_from_map: true
+    save_live_updates_in_race_from_map: false
+    seed_landmarks_from_saved_map: false
+    min_cone_confidence: 0.50
+    min_landmark_observations: 3
+    min_landmark_persistence_sec: 0.20
+    tentative_landmark_timeout_sec: 1.00
+    tentative_landmark_max_missed_frames: 10
+    mapping_max_range_m: 14.0
+    mapping_max_abs_y_m: 7.0
+    require_stereo_for_mapping: true
+    require_lidar_stereo_for_mapping: true
+    allow_lidar_side_color_fallback: false
+    merge_landmark_distance_m: 1.50
+    map_refinement_enabled: true
+    refinement_match_radius_m: 1.00
+    refinement_position_alpha: 0.04
+    refinement_max_position_step_m: 0.10
+    refinement_min_changes_to_save: 4
+    refinement_new_cone_min_observations: 10
+    refinement_new_cone_min_persistence_sec: 2.0
+    refinement_new_cone_min_separation_m: 1.20
+    refinement_max_new_cones_per_save: 4
+    refinement_max_quality_drop: 0.04
+    refinement_save_min_interval_sec: 20.0
+    refinement_requires_loop_completed: true
+    loop_completion_min_travel_m: 120.0
+    loop_completion_gate_radius_m: 4.0
+    loop_completion_max_pose_step_m: 6.0
+    reset_event_avoidance_enabled: true
+    reset_event_avoidance_influence_radius_m: 7.0
+    reset_event_avoidance_max_shift_m: 0.80
+    reset_event_avoidance_max_events: 120
+    reset_event_avoidance_min_line_change_m: 0.05
+
+fsds_raceline_planner:
+  ros__parameters:
+    map_dir: /home/hard/.fsds_autonomy/maps
+    live_line_min_cone_confidence: 0.50
+    live_line_confidence_lookahead_m: 10.0
+    live_line_min_cones_per_side: 2
+    live_line_reference_blend_enabled: true
+    live_line_reference_blend_max_distance_m: 8.0
+    live_line_min_quality_when_blended: 0.55
+    live_line_min_quality_for_drive: 0.55
+    live_line_min_points_for_drive: 12
+    live_line_min_clearance_for_drive_m: 2.00
+    live_line_obstacle_danger_distance_m: 10.0
+    live_line_obstacle_corridor_half_width_m: 1.7
+    drive_centerline_until_closed_loop: true
+    reference_max_cones_for_drive: 500
+    reset_event_avoidance_enabled: true
+    reset_event_avoidance_influence_radius_m: 7.0
+    reset_event_avoidance_max_shift_m: 0.80
+    reset_event_avoidance_max_events: 120
 
 fsds_behavior_planner:
   ros__parameters:
-    first_lap_speed_mps: 1.6
-    mapping_speed_mps: 2.2
-    race_speed_mps: 5.0
+    first_lap_speed_mps: 1.8
+    mapping_speed_mps: 2.8
+    race_speed_mps: 6.5
     map_quality_for_full_mapping_speed: 0.55
     map_quality_for_speed_profile: 0.65
+    progressive_speed_enabled: true
+    progressive_speed_max_mps: 2.4
+    progressive_speed_no_visible_cap_mps: 1.8
+    progressive_speed_quality_start: 0.65
+    progressive_speed_quality_full: 0.95
+    progressive_speed_min_centerline_points: 25
+    progressive_speed_full_centerline_points: 80
+    loop_verify_speed_mps: 1.6
+    loop_verify_no_visible_cap_mps: 1.4
     startup_ramp_sec: 10.0
-    target_accel_limit_mps2: 0.40
-    target_decel_limit_mps2: 2.50
+    target_accel_limit_mps2: 0.65
+    target_decel_limit_mps2: 3.00
     visible_curve_enabled: true
     visible_curve_lookahead_m: 18.0
-    visible_curve_min_speed_mps: 1.1
-    visible_straight_speed_mps: 3.0
-    visible_curve_straight_angle_rad: 0.08
-    visible_curve_hard_angle_rad: 0.55
+    visible_curve_min_speed_mps: 1.2
+    visible_straight_speed_mps: 5.5
+    visible_curve_straight_angle_rad: 0.06
+    visible_curve_hard_angle_rad: 0.45
     visible_curve_min_samples: 3
     visible_curve_min_cones: 4
-    visible_curve_min_cone_confidence: 0.35
+    visible_curve_min_cone_confidence: 0.50
     slow_distance_m: 8.0
     brake_distance_m: 3.0
     corridor_half_width_m: 1.4
@@ -106,18 +192,162 @@ fsds_behavior_planner:
 
 fsds_controller:
   ros__parameters:
-    publish_rate_hz: 50.0
+    publish_rate_hz: 100.0
     lookahead_m: 5.0
+    centerline_lookahead_m: 4.0
+    racing_lookahead_m: 5.0
+    centerline_max_lookahead_m: 6.0
+    racing_max_lookahead_m: 8.0
+    steering_preview_time_s: 1.4
+    wheelbase_m: 1.20
     max_steering_angle_rad: 0.48
+    steering_rate_limit_per_sec: 2.5
     track_half_width_m: 1.75
-    throttle_kp: 0.12
+    throttle_kp: 0.25
     brake_kp: 0.35
     max_throttle: 0.55
     max_brake: 0.80
     max_path_offset_m: 1.0
-    launch_throttle: 0.45
-    launch_speed_threshold_mps: 0.60
-    local_cone_min_confidence: 0.35
+    global_path_min_quality: 0.55
+    centerline_path_min_quality: 0.20
+    centerline_path_min_points: 4
+    global_path_max_error_m: 5.0
+    path_recovery_enabled: true
+    path_recovery_error_m: 1.0
+    path_recovery_lookahead_m: 1.8
+    global_target_lateral_limit_m: 4.0
+    path_target_memory_enabled: true
+    path_target_search_back_points: 6
+    path_target_search_forward_points: 55
+    path_target_reacquire_distance_m: 4.0
+    path_target_max_jump_points: 28
+    target_lateral_filter_enabled: true
+    target_lateral_filter_alpha: 0.45
+    target_lateral_filter_max_step_m: 0.35
+    launch_throttle: 0.50
+    launch_speed_threshold_mps: 1.80
+    local_cone_min_confidence: 0.50
+    local_target_cone_clearance_m: 2.25
+    local_target_lateral_limit_m: 3.0
+    local_unknown_boundary_min_abs_y_m: 1.15
+    local_unknown_boundary_max_abs_y_m: 4.5
+    prefer_centerline_until_closed_loop: false
+    prefer_local_cones_until_closed_loop: true
+    close_cone_brake_enabled: true
+    close_cone_brake_distance_m: 2.2
+    close_cone_brake_lateral_m: 0.95
+    close_cone_brake_min_speed_mps: 0.35
+    close_cone_hard_stop_distance_m: 0.90
+    close_cone_hard_stop_lateral_m: 0.30
+    boundary_guard_enabled: true
+    boundary_guard_margin_m: 1.65
+    boundary_guard_gain: 1.10
+    boundary_guard_max_shift_m: 1.40
+    boundary_guard_min_width_m: 2.2
+    boundary_guard_max_width_m: 8.0
+    boundary_guard_slow_margin_m: 1.25
+    boundary_guard_slow_speed_mps: 0.9
+    boundary_guard_brake_margin_m: 0.80
+    open_boundary_guard_slow_margin_m: 1.45
+    open_boundary_guard_slow_speed_mps: 0.95
+    open_boundary_guard_critical_margin_m: 0.95
+    open_boundary_guard_critical_speed_mps: 0.55
+    edge_recovery_enabled: true
+    edge_recovery_clearance_m: 1.15
+    edge_recovery_target_x_m: 2.0
+    closed_loop_racing_requires_saved_map: true
+    closed_loop_live_map_speed_mps: 1.4
+    closed_loop_local_fallback_speed_mps: 0.9
+    closed_loop_edge_recovery_clearance_m: 1.35
+    closed_loop_edge_recovery_speed_mps: 0.55
+    rl_residual_enabled: true
+    rl_action_timeout_sec: 0.4
+    rl_path_offset_limit_m: 0.60
+    rl_speed_delta_limit_mps: 1.20
+    rl_direct_control_enabled: true
+    rl_direct_action_timeout_sec: 0.25
+    rl_direct_blend_limit: 1.0
+    rl_safety_overrides_enabled: true
+
+fsds_live_rl:
+  ros__parameters:
+    require_closed_loop: true
+    min_track_quality: 0.60
+    step_dt: 0.10
+    max_episode_steps: 8000
+    min_episode_steps: 3500
+    variable_episode_steps: true
+    map_dir: /home/hard/.fsds_autonomy/maps
+    danger_zone_enabled: true
+    danger_zone_radius_m: 7.0
+    danger_zone_penalty: 0.35
+    random_start_enabled: false
+    random_start_min_stage: 1
+    random_start_settle_sec: 0.6
+    random_start_host: 127.0.0.1
+    random_start_port: 41451
+    random_start_vehicle: FSCar
+    random_start_z_offset_m: 0.0
+    cone_count: 12
+    preview_count: 8
+    sector_count: 24
+    start_stage: 1
+    stage2_min_sectors: 12
+    stage3_min_sectors: 22
+    stage2_clean_episodes: 3
+    stage3_clean_episodes: 4
+    stage_bad_episode_demotion_count: 4
+    stage1_residual_scale: 0.25
+    stage2_residual_scale: 0.50
+    stage3_residual_scale: 0.80
+    stage4_clean_laps: 2
+    stage3_direct_blend: 0.35
+    stage4_direct_blend: 1.0
+    reset_status_hold_terminal_sec: 1.5
+    max_path_offset_m: 0.60
+    max_speed_delta_mps: 1.20
+    max_direct_steering: 1.0
+    max_direct_throttle: 1.0
+    max_direct_brake: 1.0
+    safe_clearance_m: 1.20
+    promotion_min_clearance_m: 0.90
+    progress_reward: 4.0
+    sector_bonus: 8.0
+    sector_time_reference_sec: 25.0
+    sector_time_reference_reward: 0.5
+    sector_time_reward_max: 10.0
+    speed_reward: 0.04
+    speed_reward_power: 2.0
+    speed_reward_max_per_step: 0.40
+    speed_reward_min_clearance_m: 1.00
+    speed_reward_full_clearance_m: 1.60
+    time_penalty: 0.0
+    centerline_penalty: 0.04
+    racing_line_penalty: 0.03
+    low_clearance_penalty: 3.0
+    backward_penalty: 8.0
+    action_penalty: 0.02
+    action_smoothness_penalty: 0.08
+    throttle_brake_conflict_penalty: 1.5
+    cone_hit_penalty: 180.0
+    reset_penalty: 220.0
+    offtrack_penalty: 180.0
+    stuck_penalty: 60.0
+    lap_bonus: 250.0
+    lap_time_reference_sec: 600.0
+    lap_time_reference_reward: 50.0
+    lap_time_reward_max: 1000.0
+
+fsds_drive_recorder:
+  ros__parameters:
+    enabled: true
+    log_dir: /home/hard/.fsds_autonomy/drive_logs
+    run_id: ""
+    flush_every_n: 25
+    summary_rate_hz: 1.0
+    record_controls: true
+    record_summaries: true
+    latest_symlink: true
 
 fsds_dataset_builder:
   ros__parameters:
@@ -168,11 +398,49 @@ fsds_foxglove_visualizer:
   ros__parameters:
     publish_rate_hz: 10.0
     max_local_cones: 80
+    marker_lifetime_sec: 1.0
+    forbidden_area_enabled: true
+    forbidden_area_outer_band_m: 14.0
+    forbidden_area_alpha: 0.26
+    forbidden_area_max_boundary_gap_m: 24.0
+    forbidden_area_max_boundary_step_m: 12.0
 
 fsds_offtrack_reset_monitor:
   ros__parameters:
     enabled: true
-    offtrack_distance_m: 4.5
-    offtrack_hold_sec: 1.5
-    reset_cooldown_sec: 8.0
+    map_dir: /home/hard/.fsds_autonomy/maps
+    reset_on_cone_hit: true
+    reset_on_offtrack: true
+    reset_on_extreme_offtrack: true
+    reset_on_stuck: true
+    reset_on_forbidden_area: true
+    reset_event_log_enabled: true
+    reset_event_max_markers: 80
+    reset_marker_size_m: 1.0
+    cone_hit_reset_hold_sec: 0.0
+    stuck_speed_threshold_mps: 0.08
+    stuck_target_speed_threshold_mps: 0.5
+    stuck_hold_sec: 8.0
+    stuck_reset_min_go_sec: 6.0
+    forbidden_area_hold_sec: 1.5
+    forbidden_area_min_quality: 0.45
+    forbidden_boundary_margin_m: 0.60
+    forbidden_min_track_width_m: 2.2
+    forbidden_max_track_width_m: 8.0
+    forbidden_max_center_distance_m: 5.5
+    forbidden_boundary_max_gap_m: 24.0
+    forbidden_boundary_max_step_m: 12.0
+    offtrack_distance_m: 7.0
+    hard_offtrack_distance_m: 12.0
+    extreme_offtrack_distance_m: 12.0
+    extreme_offtrack_hold_sec: 0.5
+    offtrack_hold_sec: 3.0
+    reset_cooldown_sec: 12.0
     min_path_points: 8
+    corridor_suppression_enabled: true
+    corridor_lookahead_m: 16.0
+    corridor_min_cones_per_side: 1
+    corridor_min_confidence: 0.50
+    corridor_min_width_m: 1.6
+    corridor_max_width_m: 6.5
+    corridor_center_tolerance_m: 2.8

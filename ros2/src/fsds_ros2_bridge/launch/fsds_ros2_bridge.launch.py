@@ -1,20 +1,22 @@
+import json
+from os.path import expanduser
+
 import launch
 import launch_ros.actions
 
-from os.path import expanduser
-import json 
-
 CAMERA_FRAMERATE = 30.0
 
-def generate_launch_description():
-    with open(expanduser("~")+'/Formula-Student-Driverless-Simulator/settings.json', 'r') as file:
+
+def camera_nodes_from_settings(context):
+    settings_path = launch.substitutions.LaunchConfiguration('settings_path').perform(context)
+    with open(settings_path, 'r') as file:
         settings = json.load(file)
 
-    camera_configs = settings['Vehicles']['FSCar']['Cameras']
+    camera_configs = settings.get('Vehicles', {}).get('FSCar', {}).get('Cameras', {})
     if(not camera_configs):
-        print('no cameras configured in ~/Formula-Student-Driverless-Simulator/settings.json')
+        print(f'no cameras configured in {settings_path}')
 
-    camera_nodes = [
+    return [
         launch_ros.actions.Node(
             package='fsds_ros2_bridge',
             executable='fsds_ros2_bridge_camera',
@@ -26,15 +28,28 @@ def generate_launch_description():
                 {'depthcamera': camera_config["CaptureSettings"][0]["ImageType"] == 2},
                 {'framerate': CAMERA_FRAMERATE},
                 {'host_ip': launch.substitutions.LaunchConfiguration('host')},
+                {'api_port': launch.substitutions.LaunchConfiguration('api_port')},
                 {'timeout': launch.substitutions.LaunchConfiguration('timeout')},
             ]
         ) for camera_name, camera_config in camera_configs.items()]
+
+
+def generate_launch_description():
+    default_settings_path = expanduser("~") + '/Formula-Student-Driverless-Simulator/settings.json'
 
     ld = launch.LaunchDescription([
 
         launch.actions.DeclareLaunchArgument(
             name='host',
             default_value='localhost'
+        ),
+        launch.actions.DeclareLaunchArgument(
+            name='settings_path',
+            default_value=default_settings_path
+        ),
+        launch.actions.DeclareLaunchArgument(
+            name='api_port',
+            default_value='41451'
         ),
         launch.actions.DeclareLaunchArgument(
             name='mission_name',
@@ -60,7 +75,7 @@ def generate_launch_description():
             name='timeout',
             default_value='30.0'
         ),
-        *camera_nodes,
+        launch.actions.OpaqueFunction(function=camera_nodes_from_settings),
         launch_ros.actions.Node(
             package='fsds_ros2_bridge',
             executable='fsds_ros2_bridge',
@@ -89,6 +104,9 @@ def generate_launch_description():
                 },
                 {
                     'host_ip': launch.substitutions.LaunchConfiguration('host')
+                },
+                {
+                    'api_port': launch.substitutions.LaunchConfiguration('api_port')
                 },
                 {
                     'mission_name': launch.substitutions.LaunchConfiguration('mission_name')

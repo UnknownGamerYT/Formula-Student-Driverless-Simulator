@@ -22,6 +22,15 @@ class BehaviorPlanner(Node):
         self.declare_parameter("race_speed_mps", 5.0)
         self.declare_parameter("map_quality_for_full_mapping_speed", 0.55)
         self.declare_parameter("map_quality_for_speed_profile", 0.65)
+        self.declare_parameter("progressive_speed_enabled", True)
+        self.declare_parameter("progressive_speed_max_mps", 3.6)
+        self.declare_parameter("progressive_speed_no_visible_cap_mps", 2.6)
+        self.declare_parameter("progressive_speed_quality_start", 0.65)
+        self.declare_parameter("progressive_speed_quality_full", 0.95)
+        self.declare_parameter("progressive_speed_min_centerline_points", 25)
+        self.declare_parameter("progressive_speed_full_centerline_points", 80)
+        self.declare_parameter("loop_verify_speed_mps", 1.6)
+        self.declare_parameter("loop_verify_no_visible_cap_mps", 1.4)
         self.declare_parameter("startup_ramp_sec", 10.0)
         self.declare_parameter("target_accel_limit_mps2", 0.40)
         self.declare_parameter("target_decel_limit_mps2", 2.50)
@@ -33,7 +42,7 @@ class BehaviorPlanner(Node):
         self.declare_parameter("visible_curve_hard_angle_rad", 0.55)
         self.declare_parameter("visible_curve_min_samples", 3)
         self.declare_parameter("visible_curve_min_cones", 4)
-        self.declare_parameter("visible_curve_min_cone_confidence", 0.35)
+        self.declare_parameter("visible_curve_min_cone_confidence", 0.50)
         self.declare_parameter("slow_distance_m", 7.0)
         self.declare_parameter("brake_distance_m", 2.3)
         self.declare_parameter("corridor_half_width_m", 1.4)
@@ -54,6 +63,23 @@ class BehaviorPlanner(Node):
             self.get_parameter("map_quality_for_full_mapping_speed").value
         )
         self.map_quality_for_speed_profile = float(self.get_parameter("map_quality_for_speed_profile").value)
+        self.progressive_speed_enabled = bool(self.get_parameter("progressive_speed_enabled").value)
+        self.progressive_speed_max = float(self.get_parameter("progressive_speed_max_mps").value)
+        self.progressive_speed_no_visible_cap = float(
+            self.get_parameter("progressive_speed_no_visible_cap_mps").value
+        )
+        self.progressive_speed_quality_start = float(
+            self.get_parameter("progressive_speed_quality_start").value
+        )
+        self.progressive_speed_quality_full = float(self.get_parameter("progressive_speed_quality_full").value)
+        self.progressive_speed_min_centerline_points = int(
+            self.get_parameter("progressive_speed_min_centerline_points").value
+        )
+        self.progressive_speed_full_centerline_points = int(
+            self.get_parameter("progressive_speed_full_centerline_points").value
+        )
+        self.loop_verify_speed = float(self.get_parameter("loop_verify_speed_mps").value)
+        self.loop_verify_no_visible_cap = float(self.get_parameter("loop_verify_no_visible_cap_mps").value)
         self.startup_ramp_sec = float(self.get_parameter("startup_ramp_sec").value)
         self.target_accel_limit = float(self.get_parameter("target_accel_limit_mps2").value)
         self.target_decel_limit = float(self.get_parameter("target_decel_limit_mps2").value)
@@ -91,6 +117,7 @@ class BehaviorPlanner(Node):
         self.last_publish_time = self.get_clock().now()
         self.go_start_time = None
         self.last_curve_status = "visible_curve=unknown"
+        self.last_progressive_status = "progressive_speed=unknown"
         self.path_offset = 0.0
         self.held_obstacle_offset = 0.0
         self.last_obstacle_avoid_time = None
@@ -295,14 +322,60 @@ class BehaviorPlanner(Node):
         )
         return speed
 
+    def progressive_mapping_speed(self) -> float:
+        base_speed = min(self.first_lap_speed, self.mapping_speed)
+        if not self.progressive_speed_enabled:
+            self.last_progressive_status = f"progressive_speed=disabled speed={base_speed:.2f}mps"
+            return base_speed
+
+        quality_span = max(0.01, self.progressive_speed_quality_full - self.progressive_speed_quality_start)
+        quality_gain = clamp(
+            (float(self.track.quality) - self.progressive_speed_quality_start) / quality_span,
+            0.0,
+            1.0,
+        )
+
+        point_count = max(len(self.track.centerline), len(self.track.racing_line))
+        point_span = max(
+            1,
+            self.progressive_speed_full_centerline_points - self.progressive_speed_min_centerline_points,
+        )
+        point_gain = clamp(
+            (point_count - self.progressive_speed_min_centerline_points) / point_span,
+            0.0,
+            1.0,
+        )
+
+        progress = min(quality_gain, point_gain)
+        max_speed = max(base_speed, min(self.progressive_speed_max, self.race_speed))
+        speed = base_speed + (max_speed - base_speed) * progress
+        self.last_progressive_status = (
+            f"progressive_speed speed={speed:.2f}mps progress={progress:.2f} "
+            f"quality={self.track.quality:.2f} points={point_count}"
+        )
+        return speed
+
     def nominal_speed(self) -> float:
         if not self.mission_state.go_signal_fresh:
             return 0.0
 
         visible_speed = self.visible_curve_speed()
 
+        if self.track.closed_loop and self.mission_state.mode != "race_from_map":
+            speed = max(0.4, self.loop_verify_speed)
+            if visible_speed is None:
+                return min(speed, max(0.4, self.loop_verify_no_visible_cap))
+            return min(speed, visible_speed)
+
+        if self.mission_state.mode == "race_from_map" and not self.track.closed_loop:
+            mapping_speed = self.progressive_mapping_speed()
+            if visible_speed is None:
+                return min(mapping_speed, self.progressive_speed_no_visible_cap)
+            return min(mapping_speed, visible_speed)
+
         if (
             self.mission_state.mode == "race_from_map"
+            and self.track.closed_loop
             and self.track.quality >= self.map_quality_for_speed_profile
             and self.track.speed_profile
             and self.pose is not None
@@ -313,7 +386,7 @@ class BehaviorPlanner(Node):
                 planned_speed = min(float(self.track.speed_profile[index]), self.race_speed)
                 return min(planned_speed, visible_speed) if visible_speed is not None else planned_speed
 
-        if self.mission_state.mode == "race_from_map" and self.track.quality >= 0.35:
+        if self.mission_state.mode == "race_from_map" and self.track.closed_loop and self.track.quality >= 0.35:
             return min(self.race_speed, visible_speed) if visible_speed is not None else self.race_speed
 
         quality_gain = clamp(
@@ -373,6 +446,10 @@ class BehaviorPlanner(Node):
             behavior = "AvoidObstacle"
         elif obstacle_speed_cap is not None:
             behavior = "SlowForObstacle"
+        elif self.mission_state.mode == "race_from_map" and not self.track.closed_loop:
+            behavior = "MapCenterUntilLoop"
+        elif self.track.closed_loop and self.mission_state.mode != "race_from_map":
+            behavior = "LoopVerifyCenterline"
         elif self.mission_state.mode == "race_from_map":
             behavior = "FollowRaceline"
         elif self.last_curve_status.startswith("visible_curve speed="):
@@ -382,6 +459,8 @@ class BehaviorPlanner(Node):
 
         if status == "clear":
             status = self.last_curve_status
+            if behavior == "MapCenterUntilLoop":
+                status = f"{status} {self.last_progressive_status}"
 
         speed_msg = Float32()
         speed_msg.data = float(target_speed)

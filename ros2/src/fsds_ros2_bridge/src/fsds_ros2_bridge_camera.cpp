@@ -7,6 +7,7 @@
 #include "vehicles/car/api/CarRpcLibClient.hpp"
 #include "statistics.h"
 #include "rpc/rpc_error.h"
+#include <algorithm>
 #ifdef JAZZY
 #include <cv_bridge/cv_bridge.hpp>
 #else
@@ -34,6 +35,7 @@ std::string camera_frame_prefix = "";
 std::string camera_frame_id = "";
 double framerate = 0.0;
 std::string host_ip = "localhost";
+int api_port = RpcLibPort;
 bool depthcamera = false;
 
 rclcpp::Time make_ts(uint64_t unreal_ts)
@@ -185,6 +187,8 @@ int main(int argc, char ** argv)
 
     framerate = nh->declare_parameter<double>("framerate", 0.0);
     host_ip = nh->declare_parameter<std::string>("host_ip", "localhost");
+    api_port = nh->declare_parameter<int>("api_port", RpcLibPort);
+    api_port = std::max(1, std::min(65535, api_port));
     depthcamera = nh->declare_parameter<bool>("depthcamera", false);
     double timeout_sec = nh->declare_parameter<double>("timeout", 30.0);
 
@@ -201,7 +205,8 @@ int main(int argc, char ** argv)
     fps_statistic = ros_bridge::Statistics("fps");
 
     // ready airsim connection
-    msr::airlib::CarRpcLibClient client(host_ip, RpcLibPort, timeout_sec);
+    RCLCPP_INFO(nh->get_logger(), "Connecting camera bridge to simulator RPC %s:%d", host_ip.c_str(), api_port);
+    msr::airlib::CarRpcLibClient client(host_ip, static_cast<uint16_t>(api_port), timeout_sec);
     airsim_api = &client;
 
     try {

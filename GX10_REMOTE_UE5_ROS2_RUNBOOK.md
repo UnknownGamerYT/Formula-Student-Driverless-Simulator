@@ -13,7 +13,7 @@ Validated on 2026-05-26:
 - GDM login-screen display: `:0`
 - Simulator package: `UE5Builds/LinuxArm64`
 - Simulator RPC port: `41451`
-- Browser noVNC port: `6080`
+- Browser noVNC port: remote `6080`; local PC tunnel uses `16080` by default to avoid Windows reserved-port issues
 - VNC backend port: `5900`
 - VNC password: same as the PC/Linux password for user `hard`
 
@@ -26,7 +26,7 @@ Use separate terminals so long-running processes can stay open.
 | Your PC terminal 1 | SSH into GX10 and start `x11vnc` | `ssh ...`, then `x11vnc ...` |
 | Your PC terminal 2 | SSH into GX10 and start noVNC proxy | `ssh ...`, then `websockify ...` |
 | Your PC terminal 3 | Browser tunnel from your PC to GX10 | `ssh -N -L ...` |
-| Your PC browser | Remote GX10 desktop | `http://localhost:6080/...` |
+| Your PC browser | Remote GX10 desktop | `http://localhost:16080/...` |
 | Your PC terminal 4 | SSH into GX10 and start UE5 simulator | `ssh ...`, then `Blocks.sh ...` |
 | Your PC terminal 5 | SSH into GX10 and run ROS bridge/tests | `ssh ...`, then `ros2 ...` |
 
@@ -327,29 +327,33 @@ WebSocket server settings:
   - proxying from 127.0.0.1:6080 to 127.0.0.1:5900
 ```
 
-If `websockify` prints `404 File not found`, that usually means the browser opened `http://localhost:6080/` without `/vnc.html`. Use the full URL in step 4.
+If `websockify` prints `404 File not found`, that usually means the browser opened `http://localhost:16080/` without `/vnc.html`. Use the full URL in step 4.
 
 ## 3. Open The Browser Tunnel From Your PC
 
 On your PC, open terminal 3:
 
 ```bash
-ssh -N -L 6080:localhost:6080 hard@100.81.202.64
+ssh -N -L 127.0.0.1:16080:127.0.0.1:6080 hard@100.81.202.64
 ```
 
 After login this command intentionally appears to hang. That means the tunnel is open. Leave it running.
+
+If Windows prints `bind [127.0.0.1]:6080: Permission denied`, the local PC port is blocked or reserved. Keep the GX10 noVNC proxy listening on remote `6080`, but use local `16080` as shown above.
 
 ## 4. Open The GX10 Desktop In Your Browser
 
 On your PC, open:
 
 ```text
-http://localhost:6080/vnc.html?host=localhost&port=6080
+http://localhost:16080/vnc.html?host=localhost&port=16080
 ```
 
 Click connect and enter the VNC password. On this GX10, the VNC password is the same as the PC/Linux password for user `hard`.
 
 If you see the Ubuntu login screen, log in as `hard`.
+
+If the first login attempt says there was a problem but it works after a short wait, the noVNC tunnel is usually fine. GNOME/GDM is still switching from the lock/login greeter into the active `hard` desktop session on display `:1`. Wait 20-60 seconds, retry once, and avoid starting extra `websockify` terminals while it settles. If it keeps happening, run the VNC/noVNC cleanup commands from step 1, then start `x11vnc`, `websockify`, and the browser tunnel again.
 
 ## 5. If You Logged In From The Ubuntu Login Screen
 
@@ -548,9 +552,9 @@ Observed reference rates during validation:
 
 ## 11. Start The Autonomy Stack
 
-Use this path when you want the car to drive, map the track, publish Foxglove visualizations, and run the hard-coded off-track reset monitor.
+Use this path when you want the car to drive, map the track, publish Foxglove visualizations, and run the cone-hit reset monitor.
 
-This launch is deterministic live driving, not live RL. The first pass is intentionally conservative: it starts around `1.6 m/s`, ramps slowly, speeds up when the visible cone corridor looks straight, slows for visible curves, avoids obstacles if there is room, stops if the corridor is blocked, and only uses the generated speed profile after a saved/loaded map reaches good quality. RL training is a separate residual learner that starts after a map exists.
+This launch is deterministic live driving, not live RL. The first pass is intentionally conservative: it starts around `1.6 m/s`, ramps slowly, drives the middle/centerline with a speed-aware bicycle/pure-pursuit steering preview until the mapper completes a long loop and sees the orange start/end gate again, speeds up when the visible cone corridor looks straight, slows for visible curves, avoids obstacles if there is room, stops if the corridor is blocked, and only uses the generated speed profile after a saved/loaded map is loop verified. If a usable saved map already exists, the mapper keeps it as the saved/reference map and builds a separate clean live map from LiDAR-plus-stereo-confirmed cones. Race-from-map live observations are not blindly written back, but every later pass can refine the saved map: matched same-color cones within `1.0 m` gently nudge saved cone positions, highly persistent new cones can be added, no saved cones are deleted, and quality/sanity checks plus `/home/hard/.fsds_autonomy/maps/history` backups protect the previous map. It also carries saved/reference and live blue/yellow boundary lines, so sparse nearby cone detections do not erase the remembered track shape. Racing lines account for the `1.00 m` vehicle collision width, `0.23 m` cone width, and a `1.05 m` safety/tracking margin; they are generated as smooth outside-apex-outside lines that use the available track width, then clamped inside the blue/yellow cone corridor before publishing/saving. Runtime map/controller/visible-corridor calculations use cones with confidence `>=0.50`; lower-confidence detections can still appear in debug overlays. Persistent map creation requires LiDAR plus `CameraStereo(cam1+cam2)` agreement by default, requires at least three observations over at least `0.20 s` before publishing/saving a landmark, prunes tentative landmarks that disappear for about `1.0 s`, ignores far/off-corridor cone points, and merges same-color landmarks within about `1.5 m`; raw LiDAR-only clusters and unmatched stereo points are visible for diagnostics but do not become permanent blue/yellow map cones. Overlapping camera boxes that land at nearly the same cone position are de-duplicated before stereo/fusion/mapping. If the live racing line is sparse, low quality, or too close to live cones, it remains visible for debugging but the car drives the saved/reference line instead. Cone-hit/offtrack reset positions are saved as `*.reset_events.json` and published as X markers on `/autonomy/viz/reset_markers`. RL training is a separate residual learner that starts after a map exists.
 
 On your PC, open terminal 6:
 
@@ -575,6 +579,7 @@ ros2 launch fsds_autonomy fsds_autonomy.launch.py \
   map_dir:=/home/hard/.fsds_autonomy/maps \
   dataset_dir:=/home/hard/.fsds_autonomy/datasets/fsds_cones \
   model_path:="$CONE_MODEL" \
+  use_testing_odom:=true \
   auto_reset_enabled:=true \
   dataset_enabled:=false
 ```
@@ -585,12 +590,15 @@ Leave this terminal running. This starts:
 - camera cone detection with YOLO, falling back to color detection if needed
 - dual-camera cone triangulation from `cam1` and `cam2`
 - sensor fusion, blending LiDAR cone clusters with matching `CameraStereo(cam1+cam2)` cone positions and using monocular camera boxes mainly for color/overlay
+- state estimation from testing odom in this command, or GPS + GSS + IMU when `use_testing_odom:=false`
 - map building
 - racing-line planning
 - behavior planning
 - controller publishing to `/fsds/control_command`
 - Foxglove visualization topics
-- hard-coded off-track reset monitor
+- cone-hit reset monitor
+
+For GPS-assisted mapping from a fresh start/reset, use the same launch but set `use_testing_odom:=false`. That makes `/autonomy/pose` come from GPS + GSS + IMU and publishes `/autonomy/gps_pose` for inspection. Keep `use_testing_odom:=true` when validating against saved maps already built in the simulator testing-odom frame.
 
 For manual driving with autonomy perception/preview only, use the same launch but turn off control and auto reset:
 
@@ -603,6 +611,7 @@ ros2 launch fsds_autonomy fsds_autonomy.launch.py \
   map_dir:=/home/hard/.fsds_autonomy/maps \
   dataset_dir:=/home/hard/.fsds_autonomy/datasets/fsds_cones \
   model_path:="$CONE_MODEL" \
+  use_testing_odom:=true \
   control_enabled:=false \
   auto_reset_enabled:=false \
   dataset_enabled:=false
@@ -646,14 +655,15 @@ fsds_camera_detector:
   ros__parameters:
     stereo_enabled: true
     stereo_max_time_delta_sec: 0.30
-    stereo_min_confidence: 0.30
+    stereo_min_confidence: 0.50
     stereo_min_disparity_rad: 0.006
 
 fsds_sensor_fusion:
   ros__parameters:
     include_camera_only_geometry: false
     include_stereo_camera_geometry: true
-    stereo_camera_min_confidence: 0.45
+    min_output_cone_confidence: 0.50
+    stereo_camera_min_confidence: 0.50
     stereo_position_gate_m: 2.0
     stereo_lidar_position_blend: 0.35
     diagnostics_warn_distance_m: 0.75
@@ -666,6 +676,7 @@ fsds_controller:
     max_path_offset_m: 1.0
     launch_throttle: 0.45
     launch_speed_threshold_mps: 0.60
+    local_cone_min_confidence: 0.50
 ```
 
 The visible-curve logic reads `/autonomy/fused_cones`, bins cones ahead of the car into a local center corridor, estimates the bend angle, and publishes the final target on `/autonomy/target_speed`. Watch `/autonomy/race_state` to see statuses such as `visible_curve speed=2.45mps angle=12.2deg samples=4`.
@@ -674,7 +685,7 @@ The obstacle logic reads `/autonomy/obstacles`. If an object is close and center
 
 The launch throttle exists because the FSDS vehicle can need more than the normal proportional throttle to break static friction from rest. It only applies while target speed is positive and measured speed is below `launch_speed_threshold_mps`; normal speed control takes back over once the car is rolling.
 
-Cone geometry for mapping and path planning comes from `/autonomy/fused_cones`. When LiDAR and stereo camera detections match, the fused position is a weighted LiDAR/stereo blend. Unmatched `CameraStereo(cam1+cam2)` cones can still be used; camera-only monocular cone positions are intentionally excluded by default because single-box depth estimates are too noisy for steering. Camera detections still feed Foxglove overlays and can color matched LiDAR cones.
+Cone geometry for mapping and path planning comes from `/autonomy/fused_cones`. When LiDAR and stereo camera detections match, the fused position is a weighted LiDAR/stereo blend. Runtime calculations use fused cones with confidence `>=0.50`. Persistent map updates require LiDAR plus `CameraStereo(cam1+cam2)` agreement by default; unmatched stereo cones remain useful for diagnostics/overlays but are not written into the permanent blue/yellow map. Camera-only monocular cone positions are intentionally excluded by default because single-box depth estimates are too noisy for steering. Camera detections still feed Foxglove overlays and can color matched LiDAR cones.
 
 To inspect whether stereo camera geometry agrees with LiDAR:
 
@@ -693,9 +704,9 @@ Dataset recorder disabled; set enabled:=true to save synthetic labels
 
 The autonomy stack waits for `/fsds/signal/go`. The bridge publishes this signal, so the car should begin driving after the bridge and autonomy stack are both running.
 
-### Automatic Off-Track Reset
+### Automatic Cone-Hit Reset
 
-The reset monitor watches `/autonomy/pose` against `/autonomy/racing_line`. If the car stays farther than `4.5 m` from the generated centerline/racing line for `1.5 s`, it publishes full brake and calls:
+The reset monitor watches `/fsds/testing_only/extra_info` and resets only when the simulator `doo_counter` increases, meaning a cone was Down Or Out. Leaving the saved racing line does not reset the car by default. On a cone hit it publishes full brake and calls:
 
 ```text
 /fsds/reset
@@ -719,7 +730,7 @@ Turn automatic reset off for debugging:
 ros2 launch fsds_autonomy fsds_autonomy.launch.py auto_reset_enabled:=false
 ```
 
-If the car resets too easily or not aggressively enough, edit:
+If you want to change the reset behavior, edit:
 
 ```text
 /home/hard/Desktop/Formula-Student-Driverless-Simulator/ros2/src/fsds_autonomy/config/autonomy.yaml
@@ -730,9 +741,10 @@ Tune these values:
 ```yaml
 fsds_offtrack_reset_monitor:
   ros__parameters:
-    offtrack_distance_m: 4.5
-    offtrack_hold_sec: 1.5
-    reset_cooldown_sec: 8.0
+    reset_on_cone_hit: true
+    reset_on_offtrack: false
+    cone_hit_reset_hold_sec: 0.0
+    reset_cooldown_sec: 12.0
 ```
 
 ## 12. Run RL Learning From A Saved Map
@@ -836,19 +848,31 @@ ws://localhost:8765
 Suggested Foxglove layout:
 
 - 3D panel with fixed frame `fsds/map`
-- Image panel for `/autonomy/viz/camera/cam1_overlay`
+- Image panel for `/autonomy/viz/camera/cam1_run` during driving
+- Image panel for `/autonomy/viz/camera/cam1_debug` when tuning perception
 - Raw Messages panel for `/autonomy/race_state`
 - Raw Messages panel for `/autonomy/offtrack_reset_status`
 - Raw Messages panel for `/autonomy/sensor_fusion_diagnostics`
 - Plot panel for `/autonomy/path_offset`
 - Plot panel for `/autonomy/speed` and `/autonomy/target_speed`
+- 3D pose/path inspection for `/autonomy/gps_pose` if running GPS-assisted mapping
+- mapper persistence counts and saved-map refinement version from `/autonomy/mapper_diagnostics`
 
 Enable these 3D topics:
 
 ```text
 /autonomy/viz/map_markers
+/autonomy/viz/saved_map_markers
+/autonomy/viz/live_map_markers
+/autonomy/viz/reset_markers
 /autonomy/viz/map_centerline_path
 /autonomy/viz/optimal_racing_line_path
+/autonomy/viz/reference_racing_line_path
+/autonomy/viz/live_racing_line_path
+/autonomy/viz/reference_blue_boundary_path
+/autonomy/viz/reference_yellow_boundary_path
+/autonomy/viz/live_blue_boundary_path
+/autonomy/viz/live_yellow_boundary_path
 /autonomy/viz/current_drive_line_path
 /fsds/lidar/Lidar1
 /fsds/lidar/Lidar2
@@ -859,18 +883,28 @@ Useful camera topics:
 ```text
 /fsds/cam1/image_color
 /fsds/cam2/image_color
+/autonomy/viz/camera/cam1_debug
+/autonomy/viz/camera/cam2_debug
 /autonomy/viz/camera/cam1_overlay
 /autonomy/viz/camera/cam2_overlay
 /autonomy/camera_debug
+/autonomy/viz/camera/cam1_run
+/autonomy/viz/camera/cam2_run
+/autonomy/camera_run
 ```
+
+The debug camera topics show every camera detection, confidence label, stereo marker, behavior preview, and projected map line. The run camera topics suppress unused raw detections and show only the stereo detections plus the saved/live boundary and drive lines the car is actually using. The older `/autonomy/viz/camera/cam*_overlay` topics remain debug aliases.
 
 What to look for:
 
 - Blue markers are the left boundary, yellow markers are the right boundary, and orange/large-orange markers are the start/end gate labeled `START/END`.
 - Orange markers are saved and visualized, but the centerline/racing-line planner ignores them as normal boundary cones.
+- `/autonomy/viz/saved_map_markers` shows the remembered/reference cone positions and saved lines.
+- `/autonomy/viz/live_map_markers` shows the live/current map cone positions plus the recent fused cones the car currently sees.
 - Transparent smaller markers are live fused cone detections.
-- Cyan line is the generated center/current drive line.
-- Magenta line is the optimal racing line.
+- Cyan line is the live adapting racing line/current drive line.
+- Magenta line is the saved/reference racing line.
+- Solid blue/yellow boundary lines are the live remembered cone boundaries; fainter blue/yellow lines are the saved/reference boundaries.
 - White arrow is the car pose.
 - Red spheres are live obstacle clusters.
 - Bright green line is the temporary obstacle-avoidance offset.

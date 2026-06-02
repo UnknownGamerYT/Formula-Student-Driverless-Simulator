@@ -61,6 +61,57 @@ def line_marker(
     return marker
 
 
+def triangle_list_marker(
+    header: Header,
+    marker_id: int,
+    ns: str,
+    points: Sequence[Point],
+    color: ColorRGBA,
+    z_offset: float = 0.02,
+) -> Marker:
+    marker = Marker()
+    marker.header = header
+    marker.ns = ns
+    marker.id = marker_id
+    marker.type = Marker.TRIANGLE_LIST
+    marker.action = Marker.ADD
+    marker.pose.orientation.w = 1.0
+    marker.scale = scale(1.0, 1.0, 1.0)
+    marker.color = color
+    marker.points = [point(p.x, p.y, z_offset) for p in points]
+    return marker
+
+
+def x_marker(
+    header: Header,
+    marker_id: int,
+    ns: str,
+    x: float,
+    y: float,
+    color: ColorRGBA,
+    size: float = 1.0,
+    width: float = 0.12,
+    z_offset: float = 0.35,
+) -> Marker:
+    marker = Marker()
+    marker.header = header
+    marker.ns = ns
+    marker.id = marker_id
+    marker.type = Marker.LINE_LIST
+    marker.action = Marker.ADD
+    marker.scale.x = float(width)
+    marker.color = color
+    marker.pose.orientation.w = 1.0
+    half = max(0.05, float(size) * 0.5)
+    marker.points = [
+        point(float(x) - half, float(y) - half, z_offset),
+        point(float(x) + half, float(y) + half, z_offset),
+        point(float(x) - half, float(y) + half, z_offset),
+        point(float(x) + half, float(y) - half, z_offset),
+    ]
+    return marker
+
+
 def sphere_marker(
     header: Header,
     marker_id: int,

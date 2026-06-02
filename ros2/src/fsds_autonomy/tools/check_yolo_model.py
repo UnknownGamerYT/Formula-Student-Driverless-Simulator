@@ -8,17 +8,23 @@ from fsds_autonomy.constants import CONE_CLASS_TO_COLOR
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Check whether YOLO weights expose cone classes.")
-    parser.add_argument("model", help="Path/name of a YOLO .pt model")
+    parser.add_argument("model", help="Path/name of a YOLO .pt, .onnx, or TensorRT .engine model")
     args = parser.parse_args()
 
     from ultralytics import YOLO
 
     model = YOLO(args.model)
-    names = getattr(model, "names", {}) or {}
+    raw_names = getattr(model, "names", {}) or {}
+    if isinstance(raw_names, dict):
+        names = {int(index): str(name) for index, name in raw_names.items()}
+    elif isinstance(raw_names, (list, tuple)):
+        names = {index: str(name) for index, name in enumerate(raw_names)}
+    else:
+        names = {}
     cone_classes = {
-        int(index): str(name)
+        index: name
         for index, name in names.items()
-        if str(name) in CONE_CLASS_TO_COLOR or "cone" in str(name).lower()
+        if name in CONE_CLASS_TO_COLOR or "cone" in name.lower()
     }
 
     print(f"model: {args.model}")

@@ -128,6 +128,184 @@ def path_length(points: Sequence[Point]) -> float:
     return sum(distance_xy(points[i - 1], points[i]) for i in range(1, len(points)))
 
 
+def closed_path_has_duplicate_endpoint(points: Sequence[Point]) -> bool:
+    if len(points) < 2:
+        return False
+    return distance_xy(points[0], points[-1]) <= 1e-6
+
+
+def path_segments(points: Sequence[Point], closed_loop: bool = False):
+    if len(points) < 2:
+        return
+    for index in range(1, len(points)):
+        yield index - 1, points[index - 1], points[index]
+    if closed_loop and len(points) > 2 and not closed_path_has_duplicate_endpoint(points):
+        yield len(points) - 1, points[-1], points[0]
+
+
+def path_segment_count(points: Sequence[Point], closed_loop: bool = False) -> int:
+    if len(points) < 2:
+        return 0
+    if closed_loop and len(points) > 2 and not closed_path_has_duplicate_endpoint(points):
+        return len(points)
+    return len(points) - 1
+
+
+def polyline_path_length(points: Sequence[Point], closed_loop: bool = False) -> float:
+    return sum(distance_xy(a, b) for _, a, b in path_segments(points, closed_loop))
+
+
+def closest_point_on_polyline_with_index(
+    points: Sequence[Point],
+    x: float,
+    y: float,
+    closed_loop: bool = False,
+) -> tuple[Point, float, float, float] | None:
+    if not points:
+        return None
+    if len(points) == 1:
+        p = point(points[0].x, points[0].y, points[0].z)
+        return p, 0.0, math.hypot(float(p.x) - x, float(p.y) - y), 0.0
+
+    best_point = None
+    best_station = 0.0
+    best_distance = float("inf")
+    best_index = 0.0
+    station = 0.0
+    for segment_index, start, end in path_segments(points, closed_loop):
+        sx = float(start.x)
+        sy = float(start.y)
+        ex = float(end.x)
+        ey = float(end.y)
+        vx = ex - sx
+        vy = ey - sy
+        length_sq = vx * vx + vy * vy
+        if length_sq <= 1e-12:
+            segment_length = 0.0
+            ratio = 0.0
+        else:
+            ratio = clamp(((x - sx) * vx + (y - sy) * vy) / length_sq, 0.0, 1.0)
+            segment_length = math.sqrt(length_sq)
+        px = sx + ratio * vx
+        py = sy + ratio * vy
+        distance = math.hypot(x - px, y - py)
+        if distance < best_distance:
+            best_point = point(px, py, float(start.z) + ratio * (float(end.z) - float(start.z)))
+            best_station = station + ratio * segment_length
+            best_distance = distance
+            best_index = float(segment_index) + ratio
+        station += segment_length
+
+    if best_point is None:
+        nearest = points[nearest_point_index(points, x, y)]
+        best_point = point(nearest.x, nearest.y, nearest.z)
+        best_distance = math.hypot(float(best_point.x) - x, float(best_point.y) - y)
+        best_station = 0.0
+        best_index = 0.0
+    return best_point, best_station, best_distance, best_index
+
+
+def closest_point_on_polyline(
+    points: Sequence[Point],
+    x: float,
+    y: float,
+    closed_loop: bool = False,
+) -> tuple[Point, float, float] | None:
+    result = closest_point_on_polyline_with_index(points, x, y, closed_loop=closed_loop)
+    if result is None:
+        return None
+    closest, station, distance, _ = result
+    return closest, station, distance
+
+
+def point_at_path_index(
+    points: Sequence[Point],
+    index_position: float,
+    closed_loop: bool = False,
+) -> Point | None:
+    if not points:
+        return None
+    if len(points) == 1:
+        return point(points[0].x, points[0].y, points[0].z)
+
+    segment_count = path_segment_count(points, closed_loop)
+    if segment_count <= 0:
+        return point(points[0].x, points[0].y, points[0].z)
+    if closed_loop:
+        index_position = index_position % float(segment_count)
+    else:
+        index_position = clamp(index_position, 0.0, float(segment_count))
+
+    segment_index = int(math.floor(index_position))
+    ratio = index_position - float(segment_index)
+    if segment_index >= segment_count:
+        segment_index = segment_count - 1
+        ratio = 1.0
+    start = points[segment_index]
+    next_index = segment_index + 1
+    if next_index >= len(points):
+        next_index = 0 if closed_loop else len(points) - 1
+    end = points[next_index]
+    return point(
+        float(start.x) + ratio * (float(end.x) - float(start.x)),
+        float(start.y) + ratio * (float(end.y) - float(start.y)),
+        float(start.z) + ratio * (float(end.z) - float(start.z)),
+    )
+
+
+def point_at_reference_path_index(
+    points: Sequence[Point],
+    reference_index: float,
+    reference_segment_count: int,
+    closed_loop: bool = False,
+) -> Point | None:
+    if reference_segment_count <= 0:
+        return point_at_path_index(points, 0.0, closed_loop=closed_loop)
+    segment_count = path_segment_count(points, closed_loop)
+    if segment_count <= 0:
+        return point_at_path_index(points, 0.0, closed_loop=closed_loop)
+    target_index = reference_index * float(segment_count) / float(reference_segment_count)
+    return point_at_path_index(points, target_index, closed_loop=closed_loop)
+
+
+def point_at_path_fraction(
+    points: Sequence[Point],
+    fraction: float,
+    closed_loop: bool = False,
+) -> Point | None:
+    if not points:
+        return None
+    if len(points) == 1:
+        return point(points[0].x, points[0].y, points[0].z)
+
+    total = polyline_path_length(points, closed_loop)
+    if total <= 1e-9:
+        return point(points[0].x, points[0].y, points[0].z)
+
+    if closed_loop:
+        target = (fraction % 1.0) * total
+    else:
+        target = clamp(fraction, 0.0, 1.0) * total
+
+    station = 0.0
+    last_end = points[-1]
+    for _, start, end in path_segments(points, closed_loop):
+        segment_length = distance_xy(start, end)
+        last_end = end
+        if segment_length <= 1e-9:
+            continue
+        if station + segment_length >= target:
+            ratio = clamp((target - station) / segment_length, 0.0, 1.0)
+            return point(
+                float(start.x) + ratio * (float(end.x) - float(start.x)),
+                float(start.y) + ratio * (float(end.y) - float(start.y)),
+                float(start.z) + ratio * (float(end.z) - float(start.z)),
+            )
+        station += segment_length
+
+    return point(last_end.x, last_end.y, last_end.z)
+
+
 def curvature_at(points: Sequence[Point], index: int) -> float:
     if index <= 0 or index >= len(points) - 1:
         return 0.0

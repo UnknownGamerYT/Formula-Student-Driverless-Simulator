@@ -6,12 +6,13 @@
 
 using dseconds = std::chrono::duration<double>;
 
-AirsimROSWrapper::AirsimROSWrapper(const std::shared_ptr<rclcpp::Node>& nh, const std::string& host_ip, double timeout_sec) 
+AirsimROSWrapper::AirsimROSWrapper(const std::shared_ptr<rclcpp::Node>& nh, const std::string& host_ip, uint16_t api_port, double timeout_sec)
                                                                                                   : nh_(nh),
-                                                                                                    airsim_client_(host_ip, RpcLibPort, timeout_sec),
-                                                                                                    airsim_client_lidar_(host_ip, RpcLibPort, timeout_sec),
+                                                                                                    airsim_client_(host_ip, api_port, timeout_sec),
+                                                                                                    airsim_client_lidar_(host_ip, api_port, timeout_sec),
                                                                                                     static_tf_pub_(this->nh_)
 {
+    RCLCPP_INFO_STREAM(nh_->get_logger(), "Connecting to simulator RPC " << host_ip << ":" << api_port);
     initialize_airsim(timeout_sec);
     try {
         std::string settings_text = airsim_client_.getSettingsString();
